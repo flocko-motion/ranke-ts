@@ -1,5 +1,9 @@
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/flocko-motion/ranke-go v0.15.0 h1:BDkt3j3AMGj5jWnSSlhJ6/kUEmV4U4edRJlo+ldlQRY=
+github.com/flocko-motion/ranke-go v0.15.0/go.mod h1:Mx/cYAmJMYfJ5hgq9F1PMjx0PLX/rc6FIMEVPzypxrM=
+github.com/flocko-motion/ranke-go v0.15.1 h1:cXOMZE6dwUrvnyXmbspgwddyrJW7OmnwlebcC0V66RM=
+github.com/flocko-motion/ranke-go v0.15.1/go.mod h1:Mx/cYAmJMYfJ5hgq9F1PMjx0PLX/rc6FIMEVPzypxrM=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/klauspost/cpuid/v2 v2.0.4/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=

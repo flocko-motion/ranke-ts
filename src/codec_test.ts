@@ -12,6 +12,28 @@ import * as fx from './testing/fixtures.ts'
 // reference implementation, so these are the specification of a decode: the CBOR
 // path and the JSON path must both arrive at the claim it produced.
 
+// The fixtures must trace to a version, so that a regeneration part-way through a
+// change cannot bake in an unreleased encoder unnoticed. This runs first, because a
+// stale fixture set makes every assertion below meaningless.
+test('the fixtures come from a released ranke-go', () => {
+  assert.equal(
+    fx.provenance.substituted,
+    undefined,
+    'generated from a release rather than a local checkout',
+  )
+  assert.match(fx.provenance.rankeGo, /^v\d+\.\d+\.\d+$/, 'a released version')
+
+  // ranke-go's JSON projection nests a record's fields, so an edge can carry its
+  // own. A flat one predates that fix, and the two encodings will not agree.
+  const src = fx.source.json as Record<string, unknown>
+  assert.ok(
+    'fields' in src,
+    `ranke-go ${fx.provenance.rankeGo}'s JSON projection predates the edge-slot fix ` +
+      '(fields flattened, edges reduced to {type, reference}). Release ranke-go, then ' +
+      'cd tools && go get github.com/flocko-motion/ranke-go@vX.Y.Z && scripts/fixtures.sh',
+  )
+})
+
 test('decodeClaim reads every fixture', () => {
   for (const f of fx.all) {
     const c = decodeClaim(fx.cborBytes(f), f.id)

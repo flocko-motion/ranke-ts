@@ -24,8 +24,24 @@ export interface Fixture {
   readonly edges: ReadonlyArray<{ readonly type: string; readonly id: string }>
 }
 
+/**
+ * Provenance names the ranke-go that produced these bytes. Without it a fixture set
+ * traces to whatever was checked out at the time, so a regeneration part-way through
+ * a change bakes in an unreleased encoder with nothing to show it.
+ */
+export interface Provenance {
+  /** The ranke-go module version, e.g. "v0.15.0". */
+  readonly rankeGo: string
+  /**
+   * A path that stood in for the released module. Its presence means the fixtures
+   * reproduce nothing, so the suite refuses them.
+   */
+  readonly substituted?: string
+}
+
 interface FixtureFile {
   readonly note: string
+  readonly provenance: Provenance
   readonly ids: Readonly<Record<string, string>>
   readonly fixtures: readonly Fixture[]
 }
@@ -36,6 +52,9 @@ const file: FixtureFile = JSON.parse(
 
 /** ids names each fixture claim, plus the external content hash one edge carries. */
 export const ids = file.ids
+
+/** provenance names the ranke-go release these bytes came from. */
+export const provenance: Provenance = file.provenance
 
 export const all: readonly Fixture[] = file.fixtures
 

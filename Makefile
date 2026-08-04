@@ -2,7 +2,7 @@
 #
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
-.PHONY: all install test typecheck build clean verify release docs docs-clean \
+.PHONY: all install test typecheck build clean verify release fixtures docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -17,9 +17,15 @@ all: typecheck test build
 install:
 	npm install
 
-# Node strips types, so the sources run as they are — no build before a test.
+# Node strips types, so the sources run as they are — no build before a test. The
+# script adds a floor: `node --test` exits 0 when its glob matches nothing.
 test:
-	npm test
+	@./scripts/test.sh
+
+# Regenerate the reference data from a released ranke-go. Needs a Go toolchain, so it
+# is a deliberate step rather than part of `verify`.
+fixtures:
+	@./scripts/fixtures.sh
 
 # Covers the tests too, which the build config excludes.
 typecheck:
