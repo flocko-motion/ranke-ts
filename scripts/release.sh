@@ -8,6 +8,10 @@
 #
 # Usage: make release <major|minor|patch>   (aliases: breaking|feature|fix)
 #   Needs `gh` when run from a feature branch.
+#
+# 'main' is protected here: a PR and a green `test` check are the only way in, so
+# the merge is queued with --auto and waited on. The repo therefore needs
+# auto-merge enabled (Settings → General → Allow auto-merge).
 set -euo pipefail
 
 bump="${1:-}"
@@ -59,8 +63,26 @@ if [ "$start" != "$default" ]; then
 		echo "opening a pull request…"
 		gh pr create --base "$default" --head "$start" --fill
 	fi
-	echo "merging the pull request…"
-	gh pr merge "$start" --merge
+	# '$default' is protected on its CI check, which cannot have finished this soon
+	# after the push — so queue the merge and let GitHub land it when the check
+	# goes green. A plain `gh pr merge` here is rejected as a failing requirement.
+	echo "merging the pull request once CI passes…"
+	gh pr merge "$start" --merge --auto
+	state=""
+	for _ in $(seq 1 120); do
+		state="$(gh pr view "$start" --json state --jq .state 2>/dev/null || true)"
+		[ "$state" = "MERGED" ] && break
+		if [ "$state" = "CLOSED" ]; then
+			echo "the pull request closed without merging — no tag cut" >&2
+			exit 1
+		fi
+		sleep 5
+	done
+	if [ "$state" != "MERGED" ]; then
+		echo "the pull request has not merged after 10 minutes (CI red, or auto-merge off)." >&2
+		echo "  check: gh pr checks $start" >&2
+		exit 1
+	fi
 	git fetch origin "$default" >/dev/null 2>&1
 	target="origin/$default"
 
