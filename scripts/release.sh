@@ -119,18 +119,34 @@ next="v${maj}.${min}.${pat}"
 
 echo "tagging ${latest} -> ${next} on ${default}"
 git tag -a "$next" "$target" -m "release $next"
+
+# The run a tag push triggers is found by the commit it points at, and a commit
+# can carry more than one tag — re-releasing an unchanged commit leaves every
+# earlier attempt's run on the same SHA. Note the highest run id before pushing;
+# run ids only ascend, so the wait below can insist on a run created after this
+# point rather than settling for a stale one.
+prev_run=0
+if command -v gh >/dev/null; then
+	prev_run="$(gh run list --workflow=release.yml --limit 1 --json databaseId \
+		--jq '.[0].databaseId // 0' 2>/dev/null || true)"
+	prev_run="${prev_run:-0}"
+fi
+
 git push origin "$next"
 
 # 4. Wait for the tag-triggered release workflow, so a failed build or publish
 #    surfaces here instead of silently. Match the run by the tagged commit's SHA
-#    (reliable for tag pushes, where headBranch is unset).
+#    (headBranch is unset for tag pushes) and by an id above the pre-push high
+#    water mark, which is what tells this attempt's run from an earlier one on the
+#    same commit.
 if command -v gh >/dev/null; then
 	sha="$(git rev-parse "$target")"
 	echo "waiting for the release workflow…"
 	run_id=""
 	for _ in $(seq 1 30); do
 		run_id="$(gh run list --workflow=release.yml --json databaseId,headSha \
-			--jq "map(select(.headSha == \"$sha\"))[0].databaseId" 2>/dev/null || true)"
+			--jq "map(select(.headSha == \"$sha\" and .databaseId > $prev_run))[0].databaseId" \
+			2>/dev/null || true)"
 		[ -n "$run_id" ] && [ "$run_id" != "null" ] && break
 		sleep 2
 	done
