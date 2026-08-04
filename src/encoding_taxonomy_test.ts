@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import * as enc from './encoding_taxonomy.ts'
-import { checkAliasRoundTrip, checkSingleCharacter } from './node_taxonomy_test.ts'
+import { checkAliasRoundTrip, checkSingleCharacter } from './testing/alias_check.ts'
 
 const CLASSES: ReadonlyArray<readonly [string, string]> = [
   [enc.encApplication, enc.encApplicationAlias],
@@ -30,14 +30,23 @@ test('encoding class aliases', () => {
   )
 })
 
+// namedMediaTypes collects the exported EncodingXxx = "class/sub" constants, so a
+// table entry cannot go missing without a constant losing its alias.
+function namedMediaTypes(): ReadonlyArray<readonly [string, string]> {
+  const out: Array<readonly [string, string]> = []
+  for (const [name, value] of Object.entries(enc) as Array<[string, unknown]>) {
+    if (name.startsWith('Encoding') && typeof value === 'string' && value.includes('/')) {
+      out.push([name, value])
+    }
+  }
+  return out
+}
+
 // Every named media-type constant this module exports must have its subtype in the
 // alias table: a predefined type earns its keep by encoding compactly, so one
 // missing from the table would encode long while ranke-go encodes it short.
 test('every named media type has a subtype alias', () => {
-  const named = Object.entries(enc).filter(
-    (e): e is [string, string] =>
-      e[0].startsWith('Encoding') && typeof e[1] === 'string' && e[1].includes('/'),
-  )
+  const named = namedMediaTypes()
   assert.ok(named.length >= 56, `expected the full constant set, got ${named.length}`)
   for (const [name, media] of named) {
     const sub = media.slice(media.indexOf('/') + 1)
@@ -51,11 +60,7 @@ test('every named media type has a subtype alias', () => {
 
 test('subtype aliases are a bijection of single characters', () => {
   const seen = new Map<string, string>()
-  const named = Object.entries(enc).filter(
-    (e): e is [string, string] =>
-      e[0].startsWith('Encoding') && typeof e[1] === 'string' && e[1].includes('/'),
-  )
-  for (const [, media] of named) {
+  for (const [, media] of namedMediaTypes()) {
     const sub = media.slice(media.indexOf('/') + 1)
     const alias = enc.encodingSubToAlias(sub)
     assert.equal(alias.length, 1, `alias for ${sub}`)

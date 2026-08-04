@@ -1,0 +1,64 @@
+# Requirements for new Agents
+
+You MUST read `docs/papers/*` (fetch with `make docs`). That's the precondition to
+do anything in this repo.
+
+When starting to plan a change, *always RE-read* the relevant sections in the docs.
+Agents tend to forget details from the papers. The papers specify all details, so no
+guessing required.
+
+# ranke-go is the reference
+
+`../ranke-go` is the reference implementation. This library mirrors it: same
+filenames, same identifiers, same order within a file. Read the Go file before
+writing or changing the TypeScript one, and cite it as `file.go:line`.
+
+Where the two must differ, the divergence is stated in a comment at the point it
+happens. The three that exist so far:
+
+- Closed vocabularies are string unions here, where Go uses a named string type
+  plus a separate validator.
+- `internal/sha256.ts` has no Go counterpart: ranke-go takes SHA-256 from the
+  multiformats libraries.
+- `Where` and `Comparison` (once ported) become discriminated unions, which
+  express "exactly one form" that a Go struct cannot.
+
+# Scope
+
+Reading claims a server served. No signing, no storage, no diff materialisation,
+no query language — see README.md for why each is out.
+
+A feature that would need a private key or a write path does not belong here.
+
+# The alias tables are normative
+
+Ids are computed over the aliased bytes. An entry differing from ranke-go's gives
+one claim two encodings, which no test downstream can repair. Never re-map an
+existing entry; append only.
+
+# Tooling
+
+- `npm test` — `node --test`, which runs the `.ts` sources directly
+- `npm run typecheck` — covers sources *and* tests; `npm run build` emits only what ships
+- `use brokkr instead of grep` (brokkr --help), same as in ranke-go
+- No `sed` and no python for editing files. Manual edits.
+- No compound shell commands — one command per call, so a failure is legible.
+
+# Writing code
+
+- Comments are short. Two lines is already long; a 10-line block is wrong.
+  Say why, not what.
+- Say what a thing IS, not what it is not.
+- No `enum`, no `namespace`, no parameter properties: `erasableSyntaxOnly` holds
+  the source to what Node can strip, so tests need no build step.
+- String unions over enums, so the emitted values match ranke-go's constants.
+
+# Tests
+
+- A test must not do the system's work for it. If a test calls the thing that
+  production forgets to call, the test passes and reality fails.
+- Prefer an **oracle** to a fixture. `node:crypto` is the oracle for SHA-256;
+  ranke-go is the oracle for ids, encodings and claim bytes. Values transcribed
+  from the reference beat values this implementation produced.
+- Agreement with ranke-go proves the two agree, not that either is right. Where
+  both share a gap they agree happily — so also assert against the papers.

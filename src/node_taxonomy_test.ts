@@ -18,8 +18,12 @@ import {
   NodeSubtypeBranchesAlias,
   NodeSubtypeContributor,
   NodeSubtypeContributorAlias,
+  NodeSubtypeDelete,
+  NodeSubtypeDeleteAlias,
   NodeSubtypeDiff,
   NodeSubtypeDiffAlias,
+  NodeSubtypeExpiry,
+  NodeSubtypeExpiryAlias,
   NodeSubtypeHead,
   NodeSubtypeHeadAlias,
   nodeClassFromAlias,
@@ -28,51 +32,13 @@ import {
   nodeSubtypeToAlias,
   validNodeClass,
 } from './node_taxonomy.ts'
+import { EdgeSubtypeDelete, EdgeSubtypeExpiry, edgeSubtypeToAlias } from './edge_taxonomy.ts'
+import { checkAliasRoundTrip, checkSingleCharacter } from './testing/alias_check.ts'
 
 // Foundation unit tests for the node wire aliases (§5.1). To optimise encoding size
 // the reserved vocabulary has one-character short forms, and "an alias is
-// semantically identical to its long form." That holds only if the mapping is a
-// bijection, aliases don't collide (a duplicate would make decoding ambiguous), and
-// open-vocabulary values pass through untouched. checkAliasRoundTrip pins all three
-// and is shared with the other taxonomy tests.
-
-/**
- * checkAliasRoundTrip asserts, for a closed alias namespace: each long form maps to
- * its stated alias and back; the round-trip is identity; an open/unknown value
- * passes through both directions unchanged; and no two long forms share an alias.
- */
-export function checkAliasRoundTrip(
-  pairs: ReadonlyMap<string, string>,
-  toAlias: (v: string) => string,
-  fromAlias: (v: string) => string,
-  openValue: string,
-): void {
-  const seen = new Map<string, string>()
-  for (const [long, short] of pairs) {
-    assert.equal(toAlias(long), short, `toAlias(${long})`)
-    assert.equal(fromAlias(short), long, `fromAlias(${short})`)
-    assert.equal(fromAlias(toAlias(long)), long, `round-trip of ${long}`)
-
-    assert.notEqual(long, short, `alias must differ from the long form for ${long}`)
-    const prev = seen.get(short)
-    if (prev !== undefined) {
-      assert.fail(`alias ${short} is shared by ${prev} and ${long} — decoding would be ambiguous`)
-    }
-    seen.set(short, long)
-  }
-  assert.equal(toAlias(openValue), openValue, 'open value passes through toAlias')
-  assert.equal(fromAlias(openValue), openValue, 'open value passes through fromAlias')
-}
-
-/** checkSingleCharacter holds every alias to "the dot and one character" (§5.1). */
-export function checkSingleCharacter(
-  longs: readonly string[],
-  toAlias: (v: string) => string,
-): void {
-  for (const long of longs) {
-    assert.equal(toAlias(long).length, 1, `alias for ${long}`)
-  }
-}
+// semantically identical to its long form." testing/alias_check.ts holds the
+// assertions that pin it, shared with the other taxonomy tests.
 
 test('node class aliases', () => {
   checkAliasRoundTrip(
@@ -97,11 +63,21 @@ test('node subtype aliases', () => {
       [NodeSubtypeBranches, NodeSubtypeBranchesAlias],
       [NodeSubtypeDiff, NodeSubtypeDiffAlias],
       [NodeSubtypeHead, NodeSubtypeHeadAlias],
+      [NodeSubtypeDelete, NodeSubtypeDeleteAlias],
+      [NodeSubtypeExpiry, NodeSubtypeExpiryAlias],
     ]),
     nodeSubtypeToAlias,
     nodeSubtypeFromAlias,
     'email', // open vocabulary
   )
+})
+
+// A limiting claim and the edge naming its target share a type string, so the two
+// alias tables must abbreviate it the same way — otherwise one claim's node and
+// edge disagree on what "delete" is called.
+test('limiting subtypes agree across the node and edge tables', () => {
+  assert.equal(nodeSubtypeToAlias(NodeSubtypeDelete), edgeSubtypeToAlias(EdgeSubtypeDelete))
+  assert.equal(nodeSubtypeToAlias(NodeSubtypeExpiry), edgeSubtypeToAlias(EdgeSubtypeExpiry))
 })
 
 test('node aliases are a single character', () => {
@@ -116,6 +92,8 @@ test('node aliases are a single character', () => {
       NodeSubtypeBranches,
       NodeSubtypeDiff,
       NodeSubtypeHead,
+      NodeSubtypeDelete,
+      NodeSubtypeExpiry,
     ],
     nodeSubtypeToAlias,
   )

@@ -47,6 +47,13 @@ export const EdgeSubtypePrune = 'prune'
 export const EdgeSubtypePruneAlias = 'p'
 export const EdgeSubtypeDiff = 'diff'
 export const EdgeSubtypeDiffAlias = 'd'
+// A limiting claim points at its target through an edge of its own class (paper 1
+// §Type Vocabulary): delete documents a gap where bytes were, expiry names the last
+// time a contributor's key is valid.
+export const EdgeSubtypeDelete = 'delete'
+export const EdgeSubtypeDeleteAlias = 'x'
+export const EdgeSubtypeExpiry = 'expiry'
+export const EdgeSubtypeExpiryAlias = 'e'
 
 // Closed contribution/* edge type strings. Branch and Prune are edge-only — no
 // claim counterpart.
@@ -56,6 +63,8 @@ export const EdgeTypeBranches = `${EdgeClassContribution}/${EdgeSubtypeBranches}
 export const EdgeTypeBranch = `${EdgeClassContribution}/${EdgeSubtypeBranch}`
 export const EdgeTypePrune = `${EdgeClassContribution}/${EdgeSubtypePrune}`
 export const EdgeTypeDiff = `${EdgeClassContribution}/${EdgeSubtypeDiff}`
+export const EdgeTypeDelete = `${EdgeClassContribution}/${EdgeSubtypeDelete}`
+export const EdgeTypeExpiry = `${EdgeClassContribution}/${EdgeSubtypeExpiry}`
 
 /**
  * edgeClassToAlias / edgeClassFromAlias convert the closed edge classes; unknown
@@ -105,6 +114,10 @@ export function edgeSubtypeToAlias(s: string): string {
       return EdgeSubtypePruneAlias
     case EdgeSubtypeDiff:
       return EdgeSubtypeDiffAlias
+    case EdgeSubtypeDelete:
+      return EdgeSubtypeDeleteAlias
+    case EdgeSubtypeExpiry:
+      return EdgeSubtypeExpiryAlias
     default:
       return s
   }
@@ -124,6 +137,10 @@ export function edgeSubtypeFromAlias(s: string): string {
       return EdgeSubtypePrune
     case EdgeSubtypeDiffAlias:
       return EdgeSubtypeDiff
+    case EdgeSubtypeDeleteAlias:
+      return EdgeSubtypeDelete
+    case EdgeSubtypeExpiryAlias:
+      return EdgeSubtypeExpiry
     default:
       return s
   }

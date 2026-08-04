@@ -14,14 +14,20 @@ import {
   EdgeSubtypeBranchesAlias,
   EdgeSubtypeContributor,
   EdgeSubtypeContributorAlias,
+  EdgeSubtypeDelete,
+  EdgeSubtypeDeleteAlias,
   EdgeSubtypeDiff,
   EdgeSubtypeDiffAlias,
+  EdgeSubtypeExpiry,
+  EdgeSubtypeExpiryAlias,
   EdgeSubtypeHead,
   EdgeSubtypeHeadAlias,
   EdgeSubtypePrune,
   EdgeSubtypePruneAlias,
   EdgeTypeContributor,
+  EdgeTypeDelete,
   EdgeTypeDiff,
+  EdgeTypeExpiry,
   RelationFrom,
   RelationTo,
   edgeClassFromAlias,
@@ -30,7 +36,7 @@ import {
   edgeSubtypeToAlias,
   validEdgeClass,
 } from './edge_taxonomy.ts'
-import { checkAliasRoundTrip, checkSingleCharacter } from './node_taxonomy_test.ts'
+import { checkAliasRoundTrip, checkSingleCharacter } from './testing/alias_check.ts'
 
 test('edge class aliases', () => {
   checkAliasRoundTrip(
@@ -54,6 +60,8 @@ test('edge subtype aliases', () => {
       [EdgeSubtypeBranch, EdgeSubtypeBranchAlias],
       [EdgeSubtypePrune, EdgeSubtypePruneAlias],
       [EdgeSubtypeDiff, EdgeSubtypeDiffAlias],
+      [EdgeSubtypeDelete, EdgeSubtypeDeleteAlias],
+      [EdgeSubtypeExpiry, EdgeSubtypeExpiryAlias],
     ]),
     edgeSubtypeToAlias,
     edgeSubtypeFromAlias,
@@ -74,6 +82,8 @@ test('edge aliases are a single character', () => {
       EdgeSubtypeBranch,
       EdgeSubtypePrune,
       EdgeSubtypeDiff,
+      EdgeSubtypeDelete,
+      EdgeSubtypeExpiry,
     ],
     edgeSubtypeToAlias,
   )
@@ -91,6 +101,10 @@ test('branch and branches aliases differ by case', () => {
 test('the closed edge type strings compose class and subtype', () => {
   assert.equal(EdgeTypeContributor, 'contribution/contributor')
   assert.equal(EdgeTypeDiff, 'contribution/diff')
+  // A limiting claim and the edge naming its target share a type string, so these
+  // must equal NodeDelete / NodeExpiry once node.ts lands.
+  assert.equal(EdgeTypeDelete, 'contribution/delete')
+  assert.equal(EdgeTypeExpiry, 'contribution/expiry')
 })
 
 test('validEdgeClass admits the closed set and nothing else', () => {

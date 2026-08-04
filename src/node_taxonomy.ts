@@ -56,6 +56,12 @@ export const NodeSubtypeDiff = 'diff'
 export const NodeSubtypeDiffAlias = 'd'
 export const NodeSubtypeHead = 'head'
 export const NodeSubtypeHeadAlias = 'h'
+// The limiting claims (paper 1 §Type Vocabulary). Each takes the letter its edge
+// subtype takes, as contributor, head and diff already do.
+export const NodeSubtypeDelete = 'delete'
+export const NodeSubtypeDeleteAlias = 'x'
+export const NodeSubtypeExpiry = 'expiry'
+export const NodeSubtypeExpiryAlias = 'e'
 
 // Closed contribution/* node type strings.
 export const NodeTypeContributor = `${NodeClassContribution}/${NodeSubtypeContributor}`
@@ -120,6 +126,10 @@ export function nodeSubtypeToAlias(s: string): string {
       return NodeSubtypeDiffAlias
     case NodeSubtypeHead:
       return NodeSubtypeHeadAlias
+    case NodeSubtypeDelete:
+      return NodeSubtypeDeleteAlias
+    case NodeSubtypeExpiry:
+      return NodeSubtypeExpiryAlias
     default:
       return s
   }
@@ -137,6 +147,10 @@ export function nodeSubtypeFromAlias(s: string): string {
       return NodeSubtypeDiff
     case NodeSubtypeHeadAlias:
       return NodeSubtypeHead
+    case NodeSubtypeDeleteAlias:
+      return NodeSubtypeDelete
+    case NodeSubtypeExpiryAlias:
+      return NodeSubtypeExpiry
     default:
       return s
   }
