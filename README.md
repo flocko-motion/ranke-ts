@@ -33,10 +33,52 @@ omissions are deliberate:
 npm install @flocko-motion/ranke
 ```
 
+## A decoded claim is plain data
+
+Decoding hands back a frozen data object, not an instance with accessors:
+
+```ts
+const claim = decodeClaim(bytes, id)
+
+claim.id                  // "b5uawx4g…" — a string
+claim.type                // "source/register"
+claim.fields.title        // the claim's own fields, by name
+claim.edges[0].reference  // also a string
+claim.edges[0].fields.name
+claim.createdAt           // "2026-01-01T00:00:00.000000000Z"
+claim.createdAtMs         // 1767225600000, for sorting
+```
+
+Three consequences worth knowing:
+
+**Ids are strings on a claim, and on an edge's `reference`.** They are used as
+graph node keys and `Map` keys, at a few hundred thousand at a time, where peak
+heap decides throughput. `Id` remains the type for parsing, framing and
+`algorithm()` — reach for `parseId(claim.id)` when you want the payload rather
+than the name.
+
+**`created_at` comes back twice.** The RFC 3339 string is the value of record,
+because the claim's id commits to it and a JavaScript `Date` cannot hold its
+nanoseconds. `createdAtMs` is the lossy convenience for sorting and display.
+
+**Fields are a plain record, keyed as the taxonomy names them.** The wire
+aliases are resolved during decoding, so `.n` has already become `name`.
+
+This is the one place the library departs from mirroring ranke-go, whose
+`Claim`, `Node` and `Edge` are interfaces with methods. Go needs an interface to
+seal a struct; TypeScript gets the same guarantee from `readonly` at no runtime
+cost, and an object per accessor is a cost a browser pays for nothing.
+
 ## Design
 
 **Zero runtime dependencies.** Everything ships in the package, including
 SHA-256, so a browser pulls no supply chain to read a claim.
+
+**Streaming is the primary path.** A result run is thousands of claims arriving
+over a `ReadableStream`, so the sequence readers (cbor-seq, json-seq) yield
+claims as bytes land and a whole-buffer `decodeClaim` is the special case. A
+reader distinguishes an incomplete record, where it waits for the next chunk,
+from a malformed one, where it stops.
 
 **Synchronous throughout.** `crypto.subtle` would make every digest a promise
 and every decode async; a hand-rolled digest keeps one code path across

@@ -14,14 +14,18 @@ filenames, same identifiers, same order within a file. Read the Go file before
 writing or changing the TypeScript one, and cite it as `file.go:line`.
 
 Where the two must differ, the divergence is stated in a comment at the point it
-happens. The three that exist so far:
+happens. Those that exist so far:
 
+- **A decoded claim is plain data**, with string ids and a plain field record,
+  where ranke-go's `Claim`/`Node`/`Edge` are interfaces with methods. Go needs an
+  interface to seal a struct; `readonly` does it here for free, and a browser
+  holding 300k claims pays for every accessor object. See README.md.
 - Closed vocabularies are string unions here, where Go uses a named string type
   plus a separate validator.
-- `internal/sha256.ts` has no Go counterpart: ranke-go takes SHA-256 from the
-  multiformats libraries.
-- `Where` and `Comparison` (once ported) become discriminated unions, which
-  express "exactly one form" that a Go struct cannot.
+- `internal/sha256.ts` and `internal/cbor.ts` have no Go counterpart: ranke-go
+  takes both from libraries (multiformats, fxamacker/cbor).
+- The CBOR reader tells an incomplete record from a malformed one, which a
+  browser stream needs and a Go `io.Reader` gets from `io.ErrUnexpectedEOF`.
 
 # Scope
 
