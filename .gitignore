@@ -1,0 +1,12 @@
+dist/
+node_modules/
+
+# Foundational papers pulled fresh from ranke-graph by `make docs` —
+# fetched, never committed.
+docs/papers/
+
+# Reference artifacts fetched from the ranke-graph release.
+testdata/vectors/
+
+# Local Claude config
+/.claude/

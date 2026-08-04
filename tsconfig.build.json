@@ -1,0 +1,6 @@
+// The published build. tsconfig.json covers the tests too, so `typecheck` sees
+// them; only what ships is emitted here.
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*_test.ts"]
+}
