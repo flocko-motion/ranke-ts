@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Cut a release from the default branch as a self-contained cycle: ensure the
-# tree is clean; (if on a feature branch) push it, open + merge a PR into the
-# default branch so the tag points at MERGED code; tag the merged tip; push the
-# tag (which triggers the release workflow); then return to the branch you
-# started on. It never leaves you on — or commits directly to — the default
-# branch: you can't push to main, you only release from it.
+# Cut a release as a self-contained cycle, run from a FEATURE BRANCH: ensure the
+# tree is clean; push the branch, open + merge a PR into the default branch so the
+# tag points at MERGED code; tag the merged tip; push the tag (which triggers the
+# release workflow); then return to the branch you started on. It never leaves you
+# on — or commits directly to — the default branch, and refuses to run from it.
 #
-# Usage: make release <major|minor|patch>   (aliases: breaking|feature|fix)
-#   Needs `gh` when run from a feature branch.
+# Usage: git switch -c <branch> && make release <major|minor|patch>
+#   Aliases: breaking|feature|fix. Needs `gh`.
 #
-# 'main' is protected here: a PR and a green `test` check are the only way in, so
+# '$default' is protected: a PR and a green `test` check are the only way in, so
 # the merge is queued with --auto and waited on. The repo therefore needs
 # auto-merge enabled (Settings → General → Allow auto-merge).
 set -euo pipefail
@@ -36,73 +35,77 @@ default="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null
 default="${default:-main}"
 start="$(git rev-parse --abbrev-ref HEAD)"
 
+# 2. Releases come off a feature branch, so every tag points at code a PR merged
+#    and CI checked. '$default' is protected on both, and a tag cut from a local
+#    '$default' would sidestep them — even a synced one, since the checkout can
+#    hold commits that reached it by some other route.
+if [ "$start" = "$default" ]; then
+	cat >&2 <<-MSG
+		on '$default' — releases are cut from a feature branch, so the tag lands on
+		merged, CI-checked code. Branch, then release:
+
+		  git switch -c <branch>
+		  make release $bump
+	MSG
+	exit 1
+fi
+
 # Always end back on the branch we started on — never park on the default branch.
 trap 'git checkout --quiet "$start" 2>/dev/null || true' EXIT
 
-if [ "$start" != "$default" ]; then
-	# 2. Feature branch: push it, open a PR if there isn't one, and merge it into
-	#    the default branch — without switching this checkout — so the tag comes
-	#    off the merged tip.
-	if ! command -v gh >/dev/null; then
-		echo "on '$start' — releasing needs it merged to '$default'. Install gh (https://cli.github.com) or merge manually, then re-run." >&2
-		exit 1
-	fi
-	# Rebase onto the latest default first, so the PR is based on current
-	# '$default' and merges cleanly. Abort cleanly on conflict rather than
-	# leaving a half-finished rebase behind.
-	git fetch origin "$default" >/dev/null 2>&1
-	echo "rebasing '$start' onto origin/$default…"
-	if ! git rebase "origin/$default"; then
-		git rebase --abort 2>/dev/null || true
-		echo "rebase onto origin/$default hit conflicts — resolve them, then re-run" >&2
-		exit 1
-	fi
-	echo "pushing '$start' and merging it into '$default'…"
-	git push --force-with-lease -u origin "$start"
-	if [ -z "$(gh pr list --head "$start" --state open --json number --jq '.[0].number' 2>/dev/null)" ]; then
-		echo "opening a pull request…"
-		gh pr create --base "$default" --head "$start" --fill
-	fi
-	# '$default' is protected on its CI check, which cannot have finished this soon
-	# after the push — so queue the merge and let GitHub land it when the check
-	# goes green. A plain `gh pr merge` here is rejected as a failing requirement.
-	echo "merging the pull request once CI passes…"
-	gh pr merge "$start" --merge --auto
-	state=""
-	for _ in $(seq 1 120); do
-		state="$(gh pr view "$start" --json state --jq .state 2>/dev/null || true)"
-		[ "$state" = "MERGED" ] && break
-		if [ "$state" = "CLOSED" ]; then
-			echo "the pull request closed without merging — no tag cut" >&2
-			exit 1
-		fi
-		sleep 5
-	done
-	if [ "$state" != "MERGED" ]; then
-		echo "the pull request has not merged after 10 minutes (CI red, or auto-merge off)." >&2
-		echo "  check: gh pr checks $start" >&2
-		exit 1
-	fi
-	git fetch origin "$default" >/dev/null 2>&1
-	target="origin/$default"
-
-	# Bring the branch we started on up onto the merged default, so it's a clean
-	# base for the next round of work (the merge kept our commits, so this
-	# fast-forwards rather than replaying).
-	echo "rebasing '$start' onto origin/$default…"
-	git checkout --quiet "$start"
-	git rebase "origin/$default"
-else
-	# Already on the default branch: require sync with origin so the tag points at
-	# pushed code (never release unpushed local commits).
-	if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$default" 2>/dev/null || git rev-parse HEAD)" ]; then
-		echo "'$default' has commits not on origin — push them first" >&2
-		exit 1
-	fi
-	target="HEAD"
+# 3. Push the branch, open a PR if there isn't one, and merge it into the default
+#    branch — without switching this checkout — so the tag comes off the merged tip.
+if ! command -v gh >/dev/null; then
+	echo "on '$start' — releasing needs it merged to '$default'. Install gh (https://cli.github.com) or merge manually, then re-run." >&2
+	exit 1
 fi
+# Rebase onto the latest default first, so the PR is based on current
+# '$default' and merges cleanly. Abort cleanly on conflict rather than
+# leaving a half-finished rebase behind.
+git fetch origin "$default" >/dev/null 2>&1
+echo "rebasing '$start' onto origin/$default…"
+if ! git rebase "origin/$default"; then
+	git rebase --abort 2>/dev/null || true
+	echo "rebase onto origin/$default hit conflicts — resolve them, then re-run" >&2
+	exit 1
+fi
+echo "pushing '$start' and merging it into '$default'…"
+git push --force-with-lease -u origin "$start"
+if [ -z "$(gh pr list --head "$start" --state open --json number --jq '.[0].number' 2>/dev/null)" ]; then
+	echo "opening a pull request…"
+	gh pr create --base "$default" --head "$start" --fill
+fi
+# '$default' is protected on its CI check, which cannot have finished this soon
+# after the push — so queue the merge and let GitHub land it when the check
+# goes green. A plain `gh pr merge` here is rejected as a failing requirement.
+echo "merging the pull request once CI passes…"
+gh pr merge "$start" --merge --auto
+state=""
+for _ in $(seq 1 120); do
+	state="$(gh pr view "$start" --json state --jq .state 2>/dev/null || true)"
+	[ "$state" = "MERGED" ] && break
+	if [ "$state" = "CLOSED" ]; then
+		echo "the pull request closed without merging — no tag cut" >&2
+		exit 1
+	fi
+	sleep 5
+done
+if [ "$state" != "MERGED" ]; then
+	echo "the pull request has not merged after 10 minutes (CI red, or auto-merge off)." >&2
+	echo "  check: gh pr checks $start" >&2
+	exit 1
+fi
+git fetch origin "$default" >/dev/null 2>&1
+target="origin/$default"
 
-# 3. Bump from the latest RELEASE tag (ignore non-semver / prerelease tags), tag
+# Bring the branch we started on up onto the merged default, so it's a clean
+# base for the next round of work (the merge kept our commits, so this
+# fast-forwards rather than replaying).
+echo "rebasing '$start' onto origin/$default…"
+git checkout --quiet "$start"
+git rebase "origin/$default"
+
+# 4. Bump from the latest RELEASE tag (ignore non-semver / prerelease tags), tag
 #    the merged tip, push the tag.
 # `|| true`: on the first release there are no tags, so grep matches nothing and
 # exits 1; under `set -o pipefail` that aborts the assignment before the
@@ -134,7 +137,7 @@ fi
 
 git push origin "$next"
 
-# 4. Wait for the tag-triggered release workflow, so a failed build or publish
+# 5. Wait for the tag-triggered release workflow, so a failed build or publish
 #    surfaces here instead of silently. Match the run by the tagged commit's SHA
 #    (headBranch is unset for tag pushes) and by an id above the pre-push high
 #    water mark, which is what tells this attempt's run from an earlier one on the
