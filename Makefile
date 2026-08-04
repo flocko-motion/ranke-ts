@@ -37,6 +37,8 @@ verify: typecheck test build
 
 # Cut a release: verify → rebase onto the default branch → merge via PR → tag the
 # merged tip → push the tag → watch the release workflow, failing here if it fails.
+# Run it from a feature branch; from the default branch it refuses, since the tag
+# must land on code a PR merged and CI checked.
 # Usage: make release <major|minor|patch> (aliases: breaking|feature|fix).
 release: verify
 	@./scripts/release.sh $(filter major minor patch breaking feature fix,$(MAKECMDGOALS))
