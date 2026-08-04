@@ -1,0 +1,63 @@
+# Makefile — ranke-ts
+#
+# Thin wrapper over the npm scripts, so the targets match ranke-go's.
+
+.PHONY: all install test typecheck build clean verify release docs docs-clean \
+	major minor patch breaking feature fix
+
+# Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
+# copy into docs/papers/ for local reference; the directory is gitignored and
+# never committed — always fetched, never vendored.
+RANKE_GRAPH_REPO ?= https://github.com/flocko-motion/ranke-graph
+RANKE_GRAPH_REF  ?= main
+PAPERS_DIR       := docs/papers
+
+all: typecheck test build
+
+install:
+	npm install
+
+# Node strips types, so the sources run as they are — no build before a test.
+test:
+	npm test
+
+# Covers the tests too, which the build config excludes.
+typecheck:
+	npm run typecheck
+
+build:
+	npm run build
+
+clean:
+	rm -rf dist
+
+# The gate a release must pass. ranke-go splits the fast checks from its full
+# suite; here the whole lot runs in under a second, so `verify` is `all`.
+verify: typecheck test build
+
+# Cut a release: verify → rebase onto the default branch → merge via PR → tag the
+# merged tip → push the tag → watch the release workflow, failing here if it fails.
+# Usage: make release <major|minor|patch> (aliases: breaking|feature|fix).
+release: verify
+	@./scripts/release.sh $(filter major minor patch breaking feature fix,$(MAKECMDGOALS))
+
+# Absorb the positional bump word in `make release <bump>` so it isn't treated
+# as a missing target.
+major minor patch breaking feature fix:
+	@:
+
+docs:
+	@echo ">> fetching ranke-graph papers into $(PAPERS_DIR)/"
+	@tmp=$$(mktemp -d) && \
+		git clone --depth 1 --branch $(RANKE_GRAPH_REF) $(RANKE_GRAPH_REPO) $$tmp >/dev/null 2>&1 && \
+		rm -rf $(PAPERS_DIR) && mkdir -p $(PAPERS_DIR) && \
+		cp -r $$tmp/[0-9]*-* $(PAPERS_DIR)/ && \
+		for d in shared spec glossary; do \
+			[ -d $$tmp/$$d ] && cp -r $$tmp/$$d $(PAPERS_DIR)/; \
+		done; \
+		cp $$tmp/LICENSE $(PAPERS_DIR)/LICENSE 2>/dev/null || true; \
+		rm -rf $$tmp; \
+		echo ">> pulled $$(find $(PAPERS_DIR) -name '*.typ' | wc -l | tr -d ' ') paper(s)"
+
+docs-clean:
+	rm -rf $(PAPERS_DIR)

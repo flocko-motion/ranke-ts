@@ -1,0 +1,31 @@
+name: CI
+
+# The test gate the Makefile's `release` target assumes exists. Every push and
+# every PR, so a tag is only ever cut from a tested main.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # package.json's engines field is the single source of truth for the
+      # floor; the tests run on it, so a construct newer than that fails here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Test
+        run: make test
+
+      - name: Build
+        run: make build

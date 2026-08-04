@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write # npm provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # The tag is cut from a verified tree, so this guards against a dirty
+      # runner rather than against the code.
+      - name: Verify
+        run: make verify
+
+      # The tag carries the version; package.json stays at 0.0.0 in the tree so
+      # no commit has to be cut to bump it.
+      - name: Set version from the tag
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
+      # A scoped package defaults to restricted, hence --access public.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
