@@ -444,6 +444,20 @@ export function encodeEdge(e: EdgeRecord): Uint8Array {
  * edge's own record embedded raw — so S(v) commits to the edges and their content.
  */
 export function encodeNode(n: NodeRecord): Uint8Array {
+  return encodeNodeWithEdges(n, (n.edges ?? []).map(encodeEdge))
+}
+
+/**
+ * encodeNodeWithEdges is encodeNode where each edge's S(e) is already in hand, which is
+ * a builder's position: it encodes every edge to compute the edge ids. Canonical CBOR is
+ * deterministic, so bytes held are the bytes a re-encode yields — the same property the
+ * ids rest on.
+ *
+ * `edges` are S(e) for `n.edges`, one per edge and in that order.
+ *
+ * @internal
+ */
+export function encodeNodeWithEdges(n: NodeRecord, edges: readonly Uint8Array[]): Uint8Array {
   const entries: Array<readonly [Uint8Array, Uint8Array]> = [
     [encodeUint(N_TYPE_CLASS), encodeText(aliasToWire(n.typeClass, nodeClassToAlias))],
     [encodeUint(N_TYPE_SUB), encodeText(aliasToWire(n.typeSub, nodeSubtypeToAlias))],
@@ -459,11 +473,10 @@ export function encodeNode(n: NodeRecord): Uint8Array {
     encodingSub: N_ENCODING_SUB,
     inline: N_CONTENT,
   })
-  const edges = n.edges ?? []
   if (edges.length > 0) {
     const w = new CborWriter()
     w.writeArrayHeader(edges.length)
-    for (const e of edges) w.writeRaw(encodeEdge(e))
+    for (const raw of edges) w.writeRaw(raw)
     entries.push([encodeUint(N_EDGES), w.bytes()])
   }
 
@@ -474,8 +487,18 @@ export function encodeNode(n: NodeRecord): Uint8Array {
 
 /** encodeClaim wraps a node record as the stored claim: the record under key 1. */
 export function encodeClaim(n: NodeRecord): Uint8Array {
+  return encodeClaimFromNode(encodeNode(n))
+}
+
+/**
+ * encodeClaimFromNode is encodeClaim over S(v) already in hand — the very bytes the id
+ * was computed over, so the stored record and the id cannot come apart.
+ *
+ * @internal
+ */
+export function encodeClaimFromNode(node: Uint8Array): Uint8Array {
   const w = new CborWriter()
-  w.writeSortedMap([[encodeUint(CLAIM_NODE), encodeNode(n)]])
+  w.writeSortedMap([[encodeUint(CLAIM_NODE), node]])
   return w.bytes()
 }
 

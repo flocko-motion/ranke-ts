@@ -11,8 +11,8 @@ import {
   newEdge,
   normalizeCreatedAt,
 } from './claim_builder.ts'
-import { decodeClaim } from './codec.ts'
-import { idFromBytes, parseId } from './id.ts'
+import { decodeClaim, nodePreimage } from './codec.ts'
+import { hashContent, idFromBytes, parseId } from './id.ts'
 import * as fx from './testing/fixtures.ts'
 
 // An identity Sign makes the id the hash of the claim itself, so these are the cases
@@ -217,6 +217,22 @@ function equivalenceCases(): Array<{ label: string; built: ReturnType<typeof new
     },
   ]
 }
+
+// A build encodes the node once and puts those bytes to both uses: hashing them for the
+// id, and storing them as the claim. Hashing the stored record's own preimage is what
+// holds the two uses together — bytes stored other than the bytes hashed would name a
+// claim its own record does not answer to. The signed case is left out because its id is
+// a signature over that hash rather than the hash (§5.7).
+test('the stored record holds the bytes the id was computed over', () => {
+  for (const { label, built } of equivalenceCases()) {
+    const id = parseId(built.id)
+    if (id.algorithm() !== 'sha2-256') {
+      assert.equal(id.algorithm(), 'ed25519-pub', `${label}: an id is a hash or a signature`)
+      continue
+    }
+    assert.equal(hashContent(nodePreimage(built.bytes)).toString(), built.id, label)
+  }
+})
 
 // The strings a record carries survive the wire only where the builder holds them to a
 // charset and a canonical form, so each of these would otherwise be built into bytes

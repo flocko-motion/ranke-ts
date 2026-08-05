@@ -13,9 +13,9 @@ import {
   type EdgeRecord,
   type NodeRecord,
   claimFromRecord,
-  encodeClaim,
+  encodeClaimFromNode,
   encodeEdge,
-  encodeNode,
+  encodeNodeWithEdges,
 } from './codec.ts'
 import type { ContentRef } from './content.ts'
 import {
@@ -237,13 +237,19 @@ export function newClaim(input: ClaimInput): { claim: Claim; bytes: Uint8Array; 
     ...(edges.length === 0 ? {} : { edges: edges.map((e) => e.record) }),
   }
 
-  const hash = hashContent(encodeNode(record))
+  // Each edge was encoded to compute its id, so S(v) embeds those bytes rather than
+  // encoding the edges a second time, and the stored record wraps S(v) rather than a third.
+  const node = encodeNodeWithEdges(
+    record,
+    edges.map((e) => e.raw),
+  )
+  const hash = hashContent(node)
   const id =
     input.signer === undefined
       ? hash
       : idFromBytes(multikey(input.signer.sign(hash.rawBytes())))
 
-  const bytes = encodeClaim(record)
+  const bytes = encodeClaimFromNode(node)
   return { claim: claimFromRecord(record, id.toString()), bytes, id: id.toString() }
 }
 
