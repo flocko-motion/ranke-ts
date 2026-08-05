@@ -2,8 +2,8 @@
 #
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
-.PHONY: all install test typecheck build clean verify release fixtures generate \
-	pull-rql-schema check-generated docs docs-clean \
+.PHONY: all install test typecheck build clean testdata-clean verify release fixtures \
+	generate pull-rql-schema check-generated docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -54,6 +54,10 @@ build:
 
 clean:
 	rm -rf dist
+
+# Drop the cached artifact set, so the next run takes the current release.
+testdata-clean:
+	rm -rf testdata
 
 # The gate a release must pass. ranke-go splits the fast checks from its full
 # suite; here the whole lot runs in under a second, so `verify` is `all`.

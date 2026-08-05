@@ -133,6 +133,17 @@ Each records the ranke-go release it came from, and the suite refuses a set that
 names no release. A hand-copied fixture is one nibble from testing the wrong
 thing, which is how this rule was learnt.
 
+**Conformance runs against the published set.** ranke-graph releases
+`ranke-testdata.tar.gz`, whose manifest names 14 claim cases and 2 content blobs
+and what each must do. The suite fetches it and holds this library to it, so
+conformance is measured against the spec's artifact rather than against agreement
+with a sibling. Thirteen of the sixteen are decidable without a key: every valid
+decode, a malformed id, a height that does not follow, a reference that resolves
+nowhere, an identity Sign whose signer publishes a key, and both blobs against
+the hash they are filed under. The three that turn on a signature are named
+individually in the test, so a case becoming undecidable for a new reason fails
+rather than passes quietly. Set `RANKE_TESTDATA_DIR` to work offline.
+
 ## Development
 
 Node 22 or newer. Node runs the TypeScript sources directly by stripping types,
