@@ -29,9 +29,13 @@ happens. Those that exist so far:
 
 # Scope
 
-Reading claims a server served, and building the queries that ask for them. No
-signing, no storage, no diff materialisation, no query *execution* — see README.md
-for why each is out.
+Reading claims a server served, building claims, and building the queries that ask
+for them. No key material, no storage, no diff materialisation, no query
+*execution* — see README.md for why each is out.
+
+Signing is injected: a `Signer` turns the 34-byte multihash of S(v) into a
+signature, so an application's key never enters this library. Without one a claim
+is identity-signed, which §5.7 admits wherever the contributor publishes no key.
 
 A client sends queries, so the RankeQL `Query` type, its encoder and its shape
 checks belong here; executing one needs the graph and is RankeDB's. Mirror
@@ -43,7 +47,13 @@ edit it. `make pull-rql-schema` takes a new release, `make generate` regenerates
 and `make check-generated` refuses a release where the two drifted apart. A
 transcribed copy would give TypeScript its own version of the read language.
 
-A feature that would need a private key or a write path does not belong here.
+A feature that would hold key material or reach a store does not belong here.
+
+The encoder must produce ranke-go's bytes exactly: an id is computed over them, so
+one byte apart is a different claim. `codec_encode_test.ts` re-encodes every fixture
+and compares against `nodePreimage` of ranke-go's own output, which needs no key;
+`claim_builder_test.ts` rebuilds the identity-signed fixtures and compares ids.
+Never change the encoder without those passing.
 
 # The alias tables are normative
 

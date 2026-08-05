@@ -142,6 +142,38 @@ func main() {
 		Sign()
 	must(err)
 
+	// Identity-signed claims, where id = H(S(v)) and no key is involved (§5.7). These
+	// are the cases a keyless implementation can reproduce whole, id included, so they
+	// are what proves a builder rather than only an encoder.
+	idRoot, err := ranke.NewClaim(ranke.NodeContributor, nil).
+		WithCreatedAt(at.Add(10 * time.Second)).
+		Sign()
+	must(err)
+	idContributor, err := idRoot.AsContributor(context.Background(), nil)
+	must(err)
+
+	idNote, err := ranke.NewClaim(ranke.TypeSource("note"), idContributor).
+		WithInlineContent([]byte("signed by nobody in particular")).
+		WithEncoding(ranke.EncodingPlain).
+		WithField("b", "sorts first").
+		WithField("aa", "sorts second").
+		WithCreatedAt(at.Add(11 * time.Second)).
+		WithHeight(ranke.HeightOf(idContributor)).
+		Sign()
+	must(err)
+
+	// Two edges, so the canonical edge order is exercised rather than assumed.
+	idProv, err := ranke.NewEdge(ranke.EdgeConfig{Reference: idNote.ID(), Type: ranke.TypeDerivation("note")})
+	must(err)
+	idDerived, err := ranke.NewClaim(ranke.TypeDerivation("summary"), idContributor).
+		WithEdges(idProv).
+		WithInlineContent([]byte("a summary of nothing")).
+		WithEncoding(ranke.EncodingPlain).
+		WithCreatedAt(at.Add(12 * time.Second)).
+		WithHeight(ranke.HeightOf(idContributor, idNote)).
+		Sign()
+	must(err)
+
 	out := struct {
 		Note       string            `json:"note"`
 		Provenance provenance        `json:"provenance"`
@@ -154,12 +186,15 @@ func main() {
 			"projection move; a test failing afterwards says the encodings diverged.",
 		Provenance: readProvenance(),
 		Ids: map[string]string{
-			"contributor": root.ID().String(),
-			"source":      src.ID().String(),
-			"entity":      person.ID().String(),
-			"relation":    family.ID().String(),
-			"deletion":    deletion.ID().String(),
-			"scanHash":    scanHash.String(),
+			"contributor":     root.ID().String(),
+			"source":          src.ID().String(),
+			"entity":          person.ID().String(),
+			"relation":        family.ID().String(),
+			"deletion":        deletion.ID().String(),
+			"scanHash":        scanHash.String(),
+			"identityRoot":    idRoot.ID().String(),
+			"identityNote":    idNote.ID().String(),
+			"identityDerived": idDerived.ID().String(),
 		},
 	}
 
@@ -172,6 +207,9 @@ func main() {
 		{"entity", person},
 		{"relation", family},
 		{"deletion", deletion},
+		{"identity-root", idRoot},
+		{"identity-note", idNote},
+		{"identity-derived", idDerived},
 	} {
 		cborBytes, err := c.claim.EncodeCBOR(ranke.FormOriginal)
 		must(err)

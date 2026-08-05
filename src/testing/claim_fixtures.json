@@ -7,6 +7,9 @@
     "contributor": "b5uara4apoey7xxq3cd4bwvnuo7qpbt5id756bz5piexml6udaqtw7stg2npm25rkadh6ook5ie3j5nmqejbyrgoho5mnt7ihwlkzbqbobe",
     "deletion": "b5uasdvpwezmumytjwyk3nwovrgvdsccbebr5bv3njd4cltctjuzx246qbo2qcwakl7vynuiedmkejyfklgqjra26kc42gbdraaehigpybi",
     "entity": "b5uarwkbufdjzofmyidyvaxsg3agryrmfr2p6k62kg44dc4ma5v46v2j5n7hh4pjultc6clstv53oatgnejjrfa7blcjonxqzs2aki3ijaq",
+    "identityDerived": "bciqneucoueavjmv6pdaimjxsgye5tyhwl3ijnvrhxlumgyfthbxdxva",
+    "identityNote": "bciqhneuhubbd7giulhcrme2gwggoe3hi4u63k3tt7vlxqua3gn4o2fy",
+    "identityRoot": "bciqi2sj6oameqbgaof7z2irkfki3c6xciygn4rq7gvr45u52rzrgnti",
     "relation": "b5uax6ixfthymwrgqhya6bmvrhmrixeka7vldgmlb5na4vhvihokxh447h4biwgfzhubb3jemrglprjblpk4pxoroqrdpanxgdts5v7bea4",
     "scanHash": "bciqolxyrmk2ccg5ber33nnulvm5murzot43phg5zvwoiekebpei2hmy",
     "source": "b5uascb4cydzscgeq524x2tvjbjh7emtynkba6vchqys63zz5c3357dbkwzty5c6kqphmd57ch4dtnwnfizf7iynbqymkb665fwfcydiabu"
@@ -178,6 +181,82 @@
         {
           "type": "contribution/delete",
           "id": "bciqcsb75yt6rndn7z455w4b72gvfuj4s3lm6xkuvnazz67ibz2wxmba"
+        }
+      ]
+    },
+    {
+      "label": "identity-root",
+      "id": "bciqi2sj6oameqbgaof7z2irkfki3c6xciygn4rq7gvr45u52rzrgnti",
+      "cbor": "a101a301622e6302622e6306781e323032362d30312d30325430333a30343a31352e3132333435363738395a",
+      "json": {
+        "created_at": "2026-01-02T03:04:15.123456789Z",
+        "height": 0,
+        "id": "bciqi2sj6oameqbgaof7z2irkfki3c6xciygn4rq7gvr45u52rzrgnti",
+        "type": "contribution/contributor"
+      },
+      "edges": null
+    },
+    {
+      "label": "identity-note",
+      "id": "bciqhneuhubbd7giulhcrme2gwggoe3hi4u63k3tt7vlxqua3gn4o2fy",
+      "cbor": "a101aa01622e7302646e6f746503622e7404622e6e06781e323032362d30312d30325430333a30343a31362e3132333435363738395a0781a301582212208d493e70184804c0717f9d222a2a91b17ae2460cde461f3563ced3ba8e6266cd02622e6303622e6308a261626b736f7274732066697273746261616c736f727473207365636f6e6409581e7369676e6564206279206e6f626f647920696e20706172746963756c61720b181e0c01",
+      "json": {
+        "content": "c2lnbmVkIGJ5IG5vYm9keSBpbiBwYXJ0aWN1bGFy",
+        "content_size": 30,
+        "created_at": "2026-01-02T03:04:16.123456789Z",
+        "edges": [
+          {
+            "reference": "bciqi2sj6oameqbgaof7z2irkfki3c6xciygn4rq7gvr45u52rzrgnti",
+            "type": "contribution/contributor"
+          }
+        ],
+        "encoding": "text/plain",
+        "fields": {
+          "aa": "sorts second",
+          "b": "sorts first"
+        },
+        "height": 1,
+        "id": "bciqhneuhubbd7giulhcrme2gwggoe3hi4u63k3tt7vlxqua3gn4o2fy",
+        "type": "source/note"
+      },
+      "edges": [
+        {
+          "type": "contribution/contributor",
+          "id": "bciqkjfas6u65keivlomtcvxe2cjyawlsxgr3chjg5ddunrumeihlmgq"
+        }
+      ]
+    },
+    {
+      "label": "identity-derived",
+      "id": "bciqneucoueavjmv6pdaimjxsgye5tyhwl3ijnvrhxlumgyfthbxdxva",
+      "cbor": "a101a901622e64026773756d6d61727903622e7404622e6e06781e323032362d30312d30325430333a30343a31372e3132333435363738395a0782a30158221220769287a0423f991459c5161346b18ce26ce8e53db56e73fd5778501b3378ed1702622e6403646e6f7465a301582212208d493e70184804c0717f9d222a2a91b17ae2460cde461f3563ced3ba8e6266cd02622e6303622e630954612073756d6d617279206f66206e6f7468696e670b140c02",
+      "json": {
+        "content": "YSBzdW1tYXJ5IG9mIG5vdGhpbmc=",
+        "content_size": 20,
+        "created_at": "2026-01-02T03:04:17.123456789Z",
+        "edges": [
+          {
+            "reference": "bciqhneuhubbd7giulhcrme2gwggoe3hi4u63k3tt7vlxqua3gn4o2fy",
+            "type": "derivation/note"
+          },
+          {
+            "reference": "bciqi2sj6oameqbgaof7z2irkfki3c6xciygn4rq7gvr45u52rzrgnti",
+            "type": "contribution/contributor"
+          }
+        ],
+        "encoding": "text/plain",
+        "height": 2,
+        "id": "bciqneucoueavjmv6pdaimjxsgye5tyhwl3ijnvrhxlumgyfthbxdxva",
+        "type": "derivation/summary"
+      },
+      "edges": [
+        {
+          "type": "derivation/note",
+          "id": "bciqanllsusqoo5aeygq64ci7j2n4jjinpagp2j6j4cyyjugfr4xxcki"
+        },
+        {
+          "type": "contribution/contributor",
+          "id": "bciqkjfas6u65keivlomtcvxe2cjyawlsxgr3chjg5ddunrumeihlmgq"
         }
       ]
     }

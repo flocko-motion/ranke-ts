@@ -151,5 +151,14 @@ test('an empty stream yields nothing', () => {
 })
 
 test('the fixture labels are all present, so the stream covers each shape', () => {
-  assert.deepEqual(LABELS, ['contributor', 'source', 'entity', 'relation', 'deletion'])
+  assert.deepEqual(LABELS, [
+    'contributor',
+    'source',
+    'entity',
+    'relation',
+    'deletion',
+    'identity-root',
+    'identity-note',
+    'identity-derived',
+  ])
 })

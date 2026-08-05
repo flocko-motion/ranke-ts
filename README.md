@@ -11,18 +11,16 @@ file and name for name, so the two can be read side by side.
 
 ## Scope
 
-This library **reads** claims a server served, and **builds the queries** that
-ask for them:
-
 - decode the canonical CBOR of a claim into its node, edges, fields and content
 - decode the JSON projection, arriving at the same claim
 - read a result run as it streams: cbor-seq (RFC 8742) and json-seq (RFC 7464)
+- build claims, encoding them to the bytes ranke-go encodes them to
 - build, check and encode a RankeQL query
 - the closed type vocabularies and the wire alias tables
 - ids: the SHA2-256 multihash framing and the multibase string form
 
-It holds no private keys, signs nothing, and stores nothing. Two further
-omissions are deliberate:
+It holds no private keys and stores nothing. Two further omissions are
+deliberate:
 
 - **Diff materialisation** stays server-side. A `contribution/diff` claim
   carries a delta, and resolving it means walking the chain — work a server
@@ -30,6 +28,58 @@ omissions are deliberate:
 - **Query execution** is RankeDB's. A client sends queries, so the `Query` type,
   its encoder and its shape checks belong here; answering one needs the graph and
   a planner, which do not.
+
+## Building claims
+
+`newClaim` assembles a claim and computes its id over the canonical bytes — the
+same bytes ranke-go produces, which the tests assert byte for byte.
+
+```ts
+import { contributorFrom, heightOf, newClaim } from '@flocko-motion/ranke'
+
+const root = newClaim({ type: 'contribution/contributor', createdAt: at })
+const alice = contributorFrom(root.claim)
+
+const note = newClaim({
+  type: 'source/note',
+  contributor: alice,
+  content: { kind: 'inline', bytes, size: bytes.length, encoding: 'text/plain' },
+  fields: { title: 'a note' },
+  height: heightOf(root.claim),
+  createdAt: at,
+})
+
+note.id      // "bciq…" — H(S(v)), since nothing signed it
+note.bytes   // exactly what the id commits to
+note.claim   // the same claim a decode of those bytes yields
+```
+
+Two claims above are **identity-signed**: with no key involved the id is the hash
+itself, which §5.7 admits wherever the contributor publishes none. That is what a
+mock graph wants, and it is also the only case a keyless library can reproduce
+whole — which is how the builder is tested against ranke-go.
+
+**A key stays with the application.** Pass a `signer` and the library never sees
+it:
+
+```ts
+const signed = newClaim({
+  type: 'contribution/contributor',
+  content: { kind: 'inline', bytes: pubkey, size: pubkey.length, encoding: 'application/octet-stream' },
+  createdAt: at,
+  signer: { pubkey, sign: (message) => /* Ed25519 over these 34 bytes */ },
+})
+```
+
+The message handed to `sign` is the 34-byte SHA2-256 **multihash** of S(v), not
+the bare digest — that is what ranke-go signs, so a WebCrypto caller must pass
+those bytes through unchanged.
+
+The builder enforces what construction can: the type vocabularies, the
+inline-or-addressed content rule with its mandatory encoding, the §3.5 provenance
+invariant, one contributor edge and one diff edge, named edges on a diff claim,
+the canonical edge order, R-DELBY on an edge whose target is scheduled, and that a
+claim declaring a key cannot identity-sign.
 
 ## Queries
 

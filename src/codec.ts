@@ -5,13 +5,24 @@
 
 import type { Claim, Edge } from './claim.ts'
 import { type ContentRef, contentNone } from './content.ts'
-import { edgeClassFromAlias, edgeSubtypeFromAlias } from './edge_taxonomy.ts'
+import { edgeClassFromAlias, edgeClassToAlias, edgeSubtypeFromAlias, edgeSubtypeToAlias } from './edge_taxonomy.ts'
 import type { RelationDirection } from './edge_taxonomy.ts'
-import { encodingClassFromAlias, encodingSubFromAlias } from './encoding_taxonomy.ts'
-import { fieldNameFromAlias } from './field_taxonomy.ts'
-import { hashContent, hashFromMultihashBytes, idFromBytes } from './id.ts'
-import { nodeClassFromAlias, nodeSubtypeFromAlias } from './node_taxonomy.ts'
-import { CborReader, RankeCborError } from './internal/cbor.ts'
+import {
+  encodingClassFromAlias,
+  encodingClassToAlias,
+  encodingSubFromAlias,
+  encodingSubToAlias,
+} from './encoding_taxonomy.ts'
+import { fieldNameFromAlias, fieldNameToAlias } from './field_taxonomy.ts'
+import { splitType } from './filter.ts'
+import { hashContent, hashFromMultihashBytes, idFromBytes, parseId } from './id.ts'
+import {
+  nodeClassFromAlias,
+  nodeClassToAlias,
+  nodeSubtypeFromAlias,
+  nodeSubtypeToAlias,
+} from './node_taxonomy.ts'
+import { CborReader, CborWriter, RankeCborError, encodeText, encodeUint } from './internal/cbor.ts'
 
 /** RankeDecodeError reports bytes that are not a claim. */
 export class RankeDecodeError extends Error {
@@ -295,4 +306,157 @@ export function parseCreatedAt(s: string): number {
   const ms = Date.parse(s)
   if (Number.isNaN(ms)) throw new RankeDecodeError(`created_at is not RFC 3339: ${s}`)
   return ms
+}
+
+// ─── Encoding: the canonical bytes an id is computed over ─────────────
+
+/**
+ * NodeRecord is what encodeNode serializes: a node's own fields, with each edge
+ * already built. It is the input to signing, so nothing here is derived later.
+ */
+export interface NodeRecord {
+  readonly typeClass: string
+  readonly typeSub: string
+  /** RFC 3339 with fixed-width nanoseconds in UTC, which is what keeps S(v) stable. */
+  readonly createdAt: string
+  readonly height: number
+  readonly fields?: Readonly<Record<string, string>>
+  readonly content?: ContentRef
+  readonly edges?: readonly EdgeRecord[]
+}
+
+/** EdgeRecord is what encodeEdge serializes. */
+export interface EdgeRecord {
+  readonly reference: string
+  readonly typeClass: string
+  readonly typeSub: string
+  readonly relationDirection?: RelationDirection
+  readonly fields?: Readonly<Record<string, string>>
+  readonly content?: ContentRef
+}
+
+/**
+ * encodeEdge returns the canonical S(e) bytes an edge id is computed over.
+ *
+ * Mirrors ranke-go's buildEncEdge and encodeEdge: the aliases are applied into the
+ * bytes, and a zero-valued slot is omitted rather than written.
+ */
+export function encodeEdge(e: EdgeRecord): Uint8Array {
+  const entries: Array<readonly [Uint8Array, Uint8Array]> = [
+    [encodeUint(E_REFERENCE), encodeIdBytes(e.reference)],
+    [encodeUint(E_TYPE_CLASS), encodeText(aliasToWire(e.typeClass, edgeClassToAlias))],
+    [encodeUint(E_TYPE_SUB), encodeText(aliasToWire(e.typeSub, edgeSubtypeToAlias))],
+  ]
+  if (e.relationDirection !== undefined && e.relationDirection !== 0) {
+    entries.push([encodeUint(E_RELATION_DIRECTION), encodeInt(e.relationDirection)])
+  }
+  const fields = encodeFields(e.fields)
+  if (fields !== null) entries.push([encodeUint(E_FIELDS), fields])
+  pushContent(entries, e.content, {
+    hash: E_CONTENT_HASH,
+    size: E_CONTENT_SIZE,
+    encodingClass: E_ENCODING_CLASS,
+    encodingSub: E_ENCODING_SUB,
+    inline: E_CONTENT,
+  })
+
+  const w = new CborWriter()
+  w.writeSortedMap(entries)
+  return w.bytes()
+}
+
+/**
+ * encodeNode returns the canonical S(v) bytes a node id is computed over, with each
+ * edge's own record embedded raw — so S(v) commits to the edges and their content.
+ */
+export function encodeNode(n: NodeRecord): Uint8Array {
+  const entries: Array<readonly [Uint8Array, Uint8Array]> = [
+    [encodeUint(N_TYPE_CLASS), encodeText(aliasToWire(n.typeClass, nodeClassToAlias))],
+    [encodeUint(N_TYPE_SUB), encodeText(aliasToWire(n.typeSub, nodeSubtypeToAlias))],
+    [encodeUint(N_CREATED_AT), encodeText(n.createdAt)],
+  ]
+  if (n.height !== 0) entries.push([encodeUint(N_HEIGHT), encodeUint(n.height)])
+  const fields = encodeFields(n.fields)
+  if (fields !== null) entries.push([encodeUint(N_FIELDS), fields])
+  pushContent(entries, n.content, {
+    hash: N_CONTENT_HASH,
+    size: N_CONTENT_SIZE,
+    encodingClass: N_ENCODING_CLASS,
+    encodingSub: N_ENCODING_SUB,
+    inline: N_CONTENT,
+  })
+  const edges = n.edges ?? []
+  if (edges.length > 0) {
+    const w = new CborWriter()
+    w.writeArrayHeader(edges.length)
+    for (const e of edges) w.writeRaw(encodeEdge(e))
+    entries.push([encodeUint(N_EDGES), w.bytes()])
+  }
+
+  const w = new CborWriter()
+  w.writeSortedMap(entries)
+  return w.bytes()
+}
+
+/** encodeClaim wraps a node record as the stored claim: the record under key 1. */
+export function encodeClaim(n: NodeRecord): Uint8Array {
+  const w = new CborWriter()
+  w.writeSortedMap([[encodeUint(CLAIM_NODE), encodeNode(n)]])
+  return w.bytes()
+}
+
+// pushContent writes the content declaration, which is inline bytes or an address,
+// never both (§Content). An encoding is mandatory wherever content is present.
+function pushContent(
+  entries: Array<readonly [Uint8Array, Uint8Array]>,
+  content: ContentRef | undefined,
+  keys: { hash: number; size: number; encodingClass: number; encodingSub: number; inline: number },
+): void {
+  if (content === undefined || content.kind === 'none') return
+  const { typeClass, typeSub } = splitType(content.encoding)
+  entries.push([encodeUint(keys.encodingClass), encodeText(aliasToWire(typeClass, encodingClassToAlias))])
+  entries.push([encodeUint(keys.encodingSub), encodeText(aliasToWire(typeSub, encodingSubToAlias))])
+  if (content.size !== 0) entries.push([encodeUint(keys.size), encodeUint(content.size)])
+  if (content.kind === 'inline') {
+    if (content.bytes.length > 0) entries.push([encodeUint(keys.inline), encodeBytes(content.bytes)])
+    return
+  }
+  entries.push([encodeUint(keys.hash), encodeBytes(parseId(content.hash).rawBytes())])
+}
+
+// encodeFields aliases each key and writes the map, or null when there are none: an
+// empty map is a slot ranke-go omits.
+function encodeFields(fields: Readonly<Record<string, string>> | undefined): Uint8Array | null {
+  const names = Object.keys(fields ?? {})
+  if (names.length === 0) return null
+  const w = new CborWriter()
+  w.writeSortedMap(
+    names.map(
+      (k) => [encodeText(aliasToWire(k, fieldNameToAlias)), encodeText(fields![k]!)] as const,
+    ),
+  )
+  return w.bytes()
+}
+
+// An alias carries a leading "." on the wire — a prefix no literal can have, so the
+// reserved namespace and the open vocabulary never collide.
+function aliasToWire(v: string, toAlias: (s: string) => string): string {
+  const a = toAlias(v)
+  return a === v ? v : `.${a}`
+}
+
+function encodeIdBytes(id: string): Uint8Array {
+  return encodeBytes(parseId(id).rawBytes())
+}
+
+function encodeBytes(b: Uint8Array): Uint8Array {
+  const w = new CborWriter(b.length + 9)
+  w.writeBytes(b)
+  return w.bytes()
+}
+
+function encodeInt(n: number): Uint8Array {
+  const w = new CborWriter(9)
+  w.writeInt(n)
+  return w.bytes()
 }
