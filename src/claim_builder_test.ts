@@ -99,7 +99,12 @@ test('a claim with two edges matches ranke-go, edge order included', () => {
 // is a slot where the builder's view and the wire's may drift apart unnoticed.
 test('the claim returned is the claim its bytes decode to', () => {
   for (const { label, built } of equivalenceCases()) {
-    assert.deepStrictEqual(built.claim, decodeClaim(built.bytes, built.id), label)
+    const decoded = decodeClaim(built.bytes, built.id)
+    assert.deepStrictEqual(built.claim, decoded, label)
+    // deepStrictEqual takes an object's properties as a set, so it passes on a field map
+    // holding the right entries in another order. A consumer serialising a claim sees
+    // that order, and one built is the same claim as one read back.
+    assert.equal(JSON.stringify(built.claim), JSON.stringify(decoded), `${label} (key order)`)
   }
 })
 

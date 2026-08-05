@@ -22,7 +22,14 @@ import {
   nodeSubtypeFromAlias,
   nodeSubtypeToAlias,
 } from './node_taxonomy.ts'
-import { CborReader, CborWriter, RankeCborError, encodeText, encodeUint } from './internal/cbor.ts'
+import {
+  CborReader,
+  CborWriter,
+  RankeCborError,
+  compareBytes,
+  encodeText,
+  encodeUint,
+} from './internal/cbor.ts'
 
 /** RankeDecodeError reports bytes a claim cannot be read from. */
 export class RankeDecodeError extends Error {
@@ -122,7 +129,7 @@ function readTextMap(raw: Uint8Array): Record<string, string> {
     const keyStart = r.position
     const wire = r.readText()
     const keyRaw = raw.subarray(keyStart, r.position)
-    if (prev !== null && compare(prev, keyRaw) >= 0) {
+    if (prev !== null && compareBytes(prev, keyRaw) >= 0) {
       throw new RankeCborError('field keys out of canonical order')
     }
     prev = keyRaw
@@ -130,15 +137,6 @@ function readTextMap(raw: Uint8Array): Record<string, string> {
   }
   r.expectEnd()
   return out
-}
-
-function compare(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length)
-  for (let i = 0; i < n; i++) {
-    const d = a[i]! - b[i]!
-    if (d !== 0) return d
-  }
-  return a.length - b.length
 }
 
 // A wire alias carries a leading "." — a prefix no literal name can have, so the
@@ -308,9 +306,6 @@ function decodeEdge(raw: Uint8Array, opts: DecodeOptions): Edge {
  * the taxonomy tests hold them to: the wire then renders those strings back unchanged.
  * `claim_builder_test.ts` proves the agreement over every builder case.
  *
- * The agreement is by value. A field map is a map, so the record's own key order reaches
- * the claim, where a decode's carries the canonical order the bytes were written in.
- *
  * ranke-go needs no counterpart — its Node already satisfies Claim, where a decoded
  * claim here is plain data (see README).
  *
@@ -325,7 +320,7 @@ export function claimFromRecord(n: NodeRecord, id: string): Claim {
     createdAt: n.createdAt,
     createdAtMs: parseCreatedAt(n.createdAt),
     height: n.height,
-    fields: Object.freeze({ ...n.fields }),
+    fields: fieldsInWireOrder(n.fields),
     content: contentFromRef(n.content),
     edges: Object.freeze((n.edges ?? []).map(edgeFromRecord)),
   })
@@ -337,10 +332,27 @@ function edgeFromRecord(e: EdgeRecord): Edge {
     type: `${e.typeClass}/${e.typeSub}`,
     typeClass: e.typeClass,
     typeSub: e.typeSub,
-    fields: Object.freeze({ ...e.fields }),
+    fields: fieldsInWireOrder(e.fields),
     relationDirection: e.relationDirection ?? 0,
     content: contentFromRef(e.content),
   })
+}
+
+// fieldsInWireOrder is the field map a decode reads back: the same entries, in the order
+// the record writes them. That order is by encoded key bytes, so a short alias leads, and
+// a claim serialises the same whichever side it came from.
+function fieldsInWireOrder(
+  fields: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  if (fields === undefined) return Object.freeze({})
+  const names = Object.keys(fields)
+  if (names.length < 2) return Object.freeze({ ...fields }) // one entry is already in order
+  const wire = new Map(names.map((name) => [name, encodeText(aliasToWire(name, fieldNameToAlias))]))
+  const out: Record<string, string> = {}
+  for (const name of [...wire.keys()].sort((a, b) => compareBytes(wire.get(a)!, wire.get(b)!))) {
+    out[name] = fields[name]!
+  }
+  return Object.freeze(out)
 }
 
 // contentFromRef is the declaration a decode reads back. Empty inline content leaves
