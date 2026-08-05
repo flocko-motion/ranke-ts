@@ -29,8 +29,8 @@ const oracle: OracleFile = JSON.parse(
 // The table is generated from a list in tools/queryoracle, so its size is pinned
 // rather than floored: a floor would let cases be deleted without anything noticing,
 // and a case removed is coverage removed.
-const CASES = 57
-const REFUSALS = 37
+const CASES = 63
+const REFUSALS = 40
 
 test('the oracle comes from a released ranke-go and is whole', () => {
   assert.match(oracle.rankeGo, /^v\d+\.\d+\.\d+$/, 'a released version, not a substituted path')

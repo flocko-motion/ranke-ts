@@ -49,6 +49,7 @@ var sentinels = []struct {
 	{"ErrQueryWhereForm", ranke.ErrQueryWhereForm},
 	{"ErrQueryComparisonForm", ranke.ErrQueryComparisonForm},
 	{"ErrQueryHops", ranke.ErrQueryHops},
+	{"ErrQueryBounds", ranke.ErrQueryBounds},
 	{"ErrQueryOverflow", ranke.ErrQueryOverflow},
 	{"ErrQueryEncoding", ranke.ErrQueryEncoding},
 	{"ErrQueryEnum", ranke.ErrQueryEnum},
@@ -175,9 +176,23 @@ func main() {
 		{"results as a string", `{"select":{"branch":"main"},"limit":{"results":"5"}}`},
 		{"edges as a bare string", `{"select":{"branch":"main","path":[{"edges":"a/*"}]}}`},
 		{"a branch that is not a string", `{"select":{"branch":123}}`},
+		// The schema bounds four values at zero, so all four are asked. Enforcing only
+		// some of them left one implementation stricter than the other, with nothing
+		// able to see it.
 		{"a negative min", `{"select":{"branch":"main","path":[{"min":-1}]}}`},
 		{"a negative max", `{"select":{"branch":"main","path":[{"max":-1}]}}`},
+		{"a negative results cap", `{"select":{"branch":"main"},"limit":{"results":-1}}`},
+		{
+			"a negative content cap",
+			`{"select":{"branch":"main"},"output":{"content":{"max":-1,"overflow":"omit"}}}`,
+		},
+		// The schema's duration pattern admits no sign, yet time.ParseDuration does, so a
+		// negative budget reaches the validator through the wire as well as from Go.
+		{"a negative duration", `{"select":{"branch":"main"},"limit":{"time":"-5s"}}`},
+		{"a signed zero duration", `{"select":{"branch":"main"},"limit":{"time":"-0s"}}`},
+		{"a plus-signed duration", `{"select":{"branch":"main"},"limit":{"time":"+5s"}}`},
 		{"min 0 carries the starting set through", `{"select":{"branch":"main","path":[{"min":0}]}}`},
+		{"max 0 leaves the step unbounded", `{"select":{"branch":"main","path":[{"max":0}]}}`},
 		{"a fractional results cap", `{"select":{"branch":"main"},"limit":{"results":1.5}}`},
 		{"order as an object rather than a list", `{"select":{"branch":"main"},"order":{"field":"a"}}`},
 		{"a path step that is not an object", `{"select":{"branch":"main","path":["derivation/*"]}}`},

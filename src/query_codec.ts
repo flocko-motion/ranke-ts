@@ -34,6 +34,9 @@ export type QueryErrorCode =
   | 'ErrQueryComparisonForm'
   | 'ErrQueryHops'
   | 'ErrQueryEnum'
+  // A bound and an enumeration fail differently, and a caller switching on the code
+  // reads ErrQueryEnum as a mistyped string.
+  | 'ErrQueryBounds'
   | 'ErrQueryOverflow'
   // ranke-go refuses these while decoding, so neither mirrors a sentinel.
   | 'ErrQueryUnknownField'
@@ -317,12 +320,9 @@ function validateOutput(o: Output): void {
     )
   }
   oneOf('output.content.overflow', o.content.overflow, OVERFLOWS)
+  // A byte cap is a count, which the schema bounds at zero.
   if (o.content.max === undefined || o.content.max < 0) {
-    throw new RankeQueryError(
-      'ErrQueryEnum',
-      'output.content.max',
-      'a byte cap is a non-negative integer',
-    )
+    throw new RankeQueryError('ErrQueryBounds', 'output.content.max', 'a byte cap is non-negative')
   }
 }
 
@@ -345,14 +345,25 @@ function validateLimit(limit: Limit): void {
   checkObject('limit', limit, KEYS.limit)
   checkInt('limit.results', limit.results)
   checkString('limit.time', limit.time)
+  // A cap is a count, which the schema bounds at zero. Zero is the unbounded read.
   if (limit.results !== undefined && limit.results < 0) {
-    throw new RankeQueryError('ErrQueryEnum', 'limit.results', 'a cap is non-negative')
+    throw new RankeQueryError('ErrQueryBounds', 'limit.results', 'a cap is non-negative')
   }
-  if (limit.time !== undefined && !DURATION.test(limit.time)) {
+  if (limit.time === undefined) return
+  // The grammar admits a sign, which the schema's pattern omits and Go's ParseDuration
+  // takes — so a negative budget parses and then fails the bound, as it does upstream.
+  if (!SIGNED_DURATION.test(limit.time)) {
     throw new RankeQueryError(
       'ErrQueryEnum',
       'limit.time',
       `a duration is a decimal sequence with unit suffixes (ns, us, ms, s, m, h), or a bare 0 — got ${JSON.stringify(limit.time)}`,
+    )
+  }
+  if (limit.time.startsWith('-') && !ZERO_DURATION.test(limit.time)) {
+    throw new RankeQueryError(
+      'ErrQueryBounds',
+      'limit.time',
+      `a budget is non-negative — got ${JSON.stringify(limit.time)}`,
     )
   }
 }
@@ -364,9 +375,11 @@ function validateExecution(exec: Execution): void {
   oneOf('execution.report', exec.report, REPORTS)
 }
 
-// The duration grammar the schema fixes: "5s", "1m30s", or a bare "0" for unbounded.
-// Go's ParseDuration also accepts a leading sign, which the schema refuses.
-const DURATION = /^(0|([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+)$/
+// The duration grammar the schema fixes — "5s", "1m30s", or a bare "0" — widened by
+// the sign Go's ParseDuration takes, so what parses upstream parses here.
+const SIGNED_DURATION = /^[+-]?(0|([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+)$/
+// Zero however it is spelled: "-0s" is zero, so it clears the bound.
+const ZERO_DURATION = /^[+-]?(0|(0+(\.0+)?(ns|us|ms|s|m|h))+)$/
 
 // The multibase framing the schema fixes. Whether the payload's own framing parses is
 // parseId's answer, and needs the bytes.
