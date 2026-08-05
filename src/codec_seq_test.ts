@@ -2,7 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { RankeDecodeError } from './codec.ts'
-import { newSeqReader, readClaims } from './codec_seq.ts'
+import {
+  type ResultRecord,
+  newSeqReader,
+  readClaims,
+  readIds,
+  readRawRecords,
+  readRecords,
+} from './codec_seq.ts'
 import * as fx from './testing/fixtures.ts'
 
 // A result run is thousands of claims arriving over a stream, so the reader is fed
@@ -147,6 +154,129 @@ test('an empty stream yields nothing', () => {
     const r = newSeqReader(encoding)
     assert.deepEqual(r.push(new Uint8Array(0)), [])
     assert.deepEqual(r.end(), [])
+  }
+})
+
+// --- the kinds a record can carry ---
+//
+// A record is not always a claim: Output.Detail and Output.Shape decide what one
+// holds. RankeDB writes an id as a bare JSON string, a route of ids as an array in
+// one record, and a path of claims as one record per claim (serve.go writeResult).
+// Reading only claims left `detail: id` unreadable, which is what these cover.
+
+function jsonSeq(...records: unknown[]): Uint8Array {
+  const enc = new TextEncoder()
+  const parts: Uint8Array[] = []
+  for (const r of records) {
+    parts.push(Uint8Array.of(0x1e), enc.encode(JSON.stringify(r)), Uint8Array.of(0x0a))
+  }
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const p of parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  return out
+}
+
+function bodyOf(bytes: Uint8Array, chunk = 7): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += chunk) {
+        controller.enqueue(bytes.subarray(i, Math.min(i + chunk, bytes.length)))
+      }
+      controller.close()
+    },
+  })
+}
+
+test('an identity sequence reads as ids', async () => {
+  const ids = [fx.ids.source!, fx.ids.entity!, fx.ids.relation!]
+  const got: string[] = []
+  for await (const id of readIds(bodyOf(jsonSeq(...ids)))) got.push(id)
+  assert.deepEqual(got, ids)
+})
+
+// output.shape: path with detail: id puts a whole route in one record, so an id
+// reader flattens it while a record reader keeps the routes apart.
+test('a route of ids reads whole or flattened', async () => {
+  const routes = [
+    [fx.ids.relation!, fx.ids.entity!, fx.ids.source!],
+    [fx.ids.entity!, fx.ids.source!],
+  ]
+  const bytes = jsonSeq(...routes)
+
+  const records: ResultRecord[] = []
+  for await (const rec of readRecords(bodyOf(bytes), 'json')) records.push(rec)
+  assert.deepEqual(
+    records.map((r) => r.kind),
+    ['path_id', 'path_id'],
+  )
+  assert.deepEqual(records.map((r) => (r.kind === 'path_id' ? r.ids : null)), routes)
+
+  const flat: string[] = []
+  for await (const id of readIds(bodyOf(bytes))) flat.push(id)
+  assert.deepEqual(flat, routes.flat())
+})
+
+test('a record reader tells a claim from an id', async () => {
+  const bytes = jsonSeq(fx.ids.source!, fx.source.json, [fx.ids.entity!])
+  const kinds: string[] = []
+  for await (const rec of readRecords(bodyOf(bytes), 'json')) kinds.push(rec.kind)
+  assert.deepEqual(kinds, ['claim_id', 'claim', 'path_id'])
+})
+
+// execution.report appends one record after the last result, so a claim reader must
+// pass over it rather than try to read a claim from it.
+test('a trailing report is reported, and skipped by the claim reader', async () => {
+  const report = { StartedAt: '2026-01-02T03:04:05Z', Results: 1, Truncated: false, Events: [] }
+  const bytes = jsonSeq(fx.source.json, report)
+
+  const kinds: string[] = []
+  for await (const rec of readRecords(bodyOf(bytes), 'json')) kinds.push(rec.kind)
+  assert.deepEqual(kinds, ['claim', 'report'])
+
+  const claims: string[] = []
+  for await (const c of readClaims(bodyOf(bytes), 'json')) claims.push(c.type)
+  assert.deepEqual(claims, ['source/register'], 'the report is not a result')
+})
+
+// Asking for claims from an identity run is a mistake worth naming, since the
+// alternative is an empty result that looks like an empty archive.
+test('the claim reader refuses an identity sequence by name', async () => {
+  await assert.rejects(
+    async () => {
+      for await (const _ of readClaims(bodyOf(jsonSeq(fx.ids.source!)), 'json')) {
+        /* the first record throws */
+      }
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof RankeDecodeError)
+      assert.match(err.message, /claim_id/)
+      assert.match(err.message, /readRecords/)
+      return true
+    },
+  )
+})
+
+// The framing on its own, so a payload this library does not name is still reachable.
+test('raw records come back unread', async () => {
+  const bytes = jsonSeq('one', 'two')
+  const raws: string[] = []
+  for await (const raw of readRawRecords(bodyOf(bytes), 'json')) {
+    raws.push(new TextDecoder().decode(raw))
+  }
+  assert.deepEqual(raws, ['"one"', '"two"'])
+})
+
+test('ids read at every chunk size', async () => {
+  const ids = [fx.ids.source!, fx.ids.entity!]
+  const bytes = jsonSeq(...ids)
+  for (const size of [1, 2, 13, 64, 4096]) {
+    const got: string[] = []
+    for await (const id of readIds(bodyOf(bytes, size))) got.push(id)
+    assert.deepEqual(got, ids, `chunk ${size}`)
   }
 })
 
