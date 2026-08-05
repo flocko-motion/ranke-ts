@@ -45,14 +45,27 @@ export type QueryErrorCode =
 /** RankeQueryError reports a query that would be refused. */
 export class RankeQueryError extends Error {
   override readonly name: string = 'RankeQueryError'
+  /** The rule broken, which is what an error message names. */
   readonly code: QueryErrorCode
+  /**
+   * Every rule this refusal answers to, `code` first. A condition two rules both
+   * name carries both, so a caller watching one need not know the other — the
+   * counterpart of ranke-go's errors.Is matching two sentinels.
+   */
+  readonly codes: readonly QueryErrorCode[]
   /** The field the rule applies to, in the wire's dotted form. */
   readonly field: string
 
-  constructor(code: QueryErrorCode, field: string, detail: string) {
+  constructor(code: QueryErrorCode, field: string, detail: string, ...also: QueryErrorCode[]) {
     super(`${field}: ${detail}`)
     this.code = code
+    this.codes = [code, ...also]
     this.field = field
+  }
+
+  /** is reports whether this refusal answers to a rule, as errors.Is does. */
+  is(code: QueryErrorCode): boolean {
+    return this.codes.includes(code)
   }
 }
 
@@ -217,14 +230,26 @@ function validateStep(step: PathStep, field: string): void {
   checkInt(`${field}.max`, step.max)
   oneOf(`${field}.dir`, step.dir, DIRS)
   // A hop count is bounded at zero. Zero itself is admissible: min 0 carries the
-  // starting set through, max 0 leaves the step unbounded.
+  // starting set through, max 0 leaves the step unbounded. A negative breaks that
+  // bound as well as the step rule, so it answers to either.
   if (step.min !== undefined && step.min < 0) {
-    throw new RankeQueryError('ErrQueryHops', `${field}.min`, `${step.min} is negative`)
+    throw new RankeQueryError(
+      'ErrQueryHops',
+      `${field}.min`,
+      `${step.min} is negative`,
+      'ErrQueryBounds',
+    )
   }
   if (step.max !== undefined && step.max < 0) {
-    throw new RankeQueryError('ErrQueryHops', `${field}.max`, `${step.max} is negative`)
+    throw new RankeQueryError(
+      'ErrQueryHops',
+      `${field}.max`,
+      `${step.max} is negative`,
+      'ErrQueryBounds',
+    )
   }
   const min = step.min ?? 1
+  // A floor above a bounded ceiling breaks no bound, so it stays the step rule alone.
   if (step.max !== undefined && step.max > 0 && min > step.max) {
     throw new RankeQueryError(
       'ErrQueryHops',

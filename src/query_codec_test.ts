@@ -13,6 +13,8 @@ interface Verdict {
   query: unknown
   accepted: boolean
   code?: string
+  /** Every sentinel ranke-go's errors.Is matches, since one condition may answer to two. */
+  codes?: string[]
   detail?: string
 }
 
@@ -116,6 +118,31 @@ test('a refusal names the same rule ranke-go names', () => {
       if (!(err instanceof RankeQueryError)) throw err
       if (err.code !== v.code) {
         mismatches.push(`${v.label}: ranke-go ${v.code}, ranke-ts ${err.code}`)
+      }
+    }
+  }
+  assert.deepEqual(mismatches, [])
+})
+
+// A condition two rules both name answers to both, so the whole matching set is
+// compared. Comparing only the first would let one side drop the second rule and
+// still pass, which is the pairing going unnoticed.
+test('a refusal answers to every rule ranke-go matches', () => {
+  const mismatches: string[] = []
+  for (const v of oracle.verdicts) {
+    if (v.accepted || v.codes === undefined || v.codes.length === 0) continue
+    try {
+      ValidateQuery(v.query as Query)
+      continue
+    } catch (err) {
+      if (!(err instanceof RankeQueryError)) throw err
+      const got = [...err.codes].sort()
+      const want = [...v.codes].sort()
+      if (got.join(',') !== want.join(',')) {
+        mismatches.push(`${v.label}: ranke-go [${want}], ranke-ts [${got}]`)
+      }
+      for (const code of v.codes) {
+        assert.ok(err.is(code as never), `${v.label}: is(${code})`)
       }
     }
   }

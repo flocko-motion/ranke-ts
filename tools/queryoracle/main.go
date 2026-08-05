@@ -32,6 +32,9 @@ type verdict struct {
 	// Code names the sentinel it was refused under, empty when accepted. A refusal
 	// with no code is one this table does not classify.
 	Code string `json:"code,omitempty"`
+	// Codes is every sentinel errors.Is matches, since one condition may answer to two
+	// rules. Recording only the first would leave that pairing untestable downstream.
+	Codes []string `json:"codes,omitempty"`
 	// Detail is ranke-go's message, for reading a failure rather than for asserting.
 	Detail string `json:"detail,omitempty"`
 }
@@ -55,13 +58,16 @@ var sentinels = []struct {
 	{"ErrQueryEnum", ranke.ErrQueryEnum},
 }
 
-func classify(err error) string {
+// classify returns every sentinel err matches, in table order, so the first is the
+// rule an error message names and the rest are the ones it also answers to.
+func classify(err error) []string {
+	var out []string
 	for _, s := range sentinels {
 		if errors.Is(err, s.err) {
-			return s.code
+			out = append(out, s.code)
 		}
 	}
-	return ""
+	return out
 }
 
 func main() {
@@ -218,7 +224,10 @@ func main() {
 		if err == nil {
 			v.Accepted = true
 		} else {
-			v.Code = classify(err)
+			v.Codes = classify(err)
+			if len(v.Codes) > 0 {
+				v.Code = v.Codes[0]
+			}
 			v.Detail = err.Error()
 		}
 		out.Verdicts = append(out.Verdicts, v)
