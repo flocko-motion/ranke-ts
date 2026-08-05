@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  type ClaimInput,
   RankeBuildError,
   contributorFrom,
   edgeIdOf,
@@ -11,7 +12,7 @@ import {
   normalizeCreatedAt,
 } from './claim_builder.ts'
 import { decodeClaim } from './codec.ts'
-import { parseId } from './id.ts'
+import { idFromBytes, parseId } from './id.ts'
 import * as fx from './testing/fixtures.ts'
 
 // An identity Sign makes the id the hash of the claim itself, so these are the cases
@@ -91,11 +92,166 @@ test('a claim with two edges matches ranke-go, edge order included', () => {
   )
 })
 
-// The claim a builder returns is the claim a decode of its own bytes yields, so a
-// caller can store the bytes and read back what it built.
-test('what is built decodes to itself', () => {
-  const root = newClaim({ type: 'contribution/contributor', createdAt: AT_ROOT })
-  assert.deepEqual(decodeClaim(root.bytes, root.id), root.claim)
+// The claim a builder returns is the claim a decode of its own bytes yields, so a caller
+// can store the bytes and read back what it built. The builder assembles that claim from
+// the record it holds rather than parsing its own output, so this is where the two views
+// are held to each other — one case per slot a record carries, since a slot no case fills
+// is a slot where the builder's view and the wire's may drift apart unnoticed.
+test('the claim returned is the claim its bytes decode to', () => {
+  for (const { label, built } of equivalenceCases()) {
+    assert.deepStrictEqual(built.claim, decodeClaim(built.bytes, built.id), label)
+  }
+})
+
+function equivalenceCases(): Array<{ label: string; built: ReturnType<typeof newClaim> }> {
+  const rootClaim = newClaim({ type: 'contribution/contributor', createdAt: AT_ROOT })
+  const contributor = contributorFrom(rootClaim.claim)
+  const base = newClaim({ type: 'source/note', contributor, createdAt: AT_ROOT, height: 1 })
+  const pubkey = Uint8Array.from(Buffer.from('ed01' + '33'.repeat(32), 'hex'))
+  const external = fx.ids.scanHash! // the external content hash one fixture edge carries
+
+  return [
+    { label: 'a root contributor: no content, no fields, no edges, height 0', built: rootClaim },
+    { label: 'a claim resting on a contributor', built: base },
+    {
+      label: 'inline content and fields whose keys pin the wire ordering',
+      built: newClaim({
+        type: 'source/note',
+        contributor,
+        createdAt: AT_NOTE,
+        height: 1,
+        content: { kind: 'inline', bytes: enc.encode('a note'), size: 6, encoding: 'text/plain' },
+        fields: { b: 'sorts first', aa: 'sorts second', title: 'aliased', height: 'named like a slot' },
+      }),
+    },
+    {
+      label: 'external content, addressed and sized',
+      built: newClaim({
+        type: 'source/note',
+        contributor,
+        createdAt: AT_NOTE,
+        height: 1,
+        content: { kind: 'external', hash: external, size: 12, encoding: 'application/octet-stream' },
+      }),
+    },
+    {
+      label: 'inline content of no bytes, which the record leaves out',
+      built: newClaim({
+        type: 'source/note',
+        contributor,
+        createdAt: AT_NOTE,
+        height: 1,
+        content: { kind: 'inline', bytes: new Uint8Array(0), size: 0, encoding: 'text/plain' },
+      }),
+    },
+    {
+      label: 'an encoding subtype outside the alias table',
+      built: newClaim({
+        type: 'source/note',
+        contributor,
+        createdAt: AT_NOTE,
+        height: 1,
+        content: { kind: 'inline', bytes: enc.encode('{}'), size: 2, encoding: 'text/x-not-aliased' },
+      }),
+    },
+    {
+      label: 'every edge slot: a direction, own fields, inline and external content',
+      built: newClaim({
+        type: 'relation/family',
+        contributor,
+        createdAt: AT_DERIVED,
+        height: 2,
+        edges: [
+          { reference: base.id, type: 'derivation/note' },
+          {
+            reference: base.id,
+            type: 'relation/family',
+            relationDirection: 1,
+            fields: { name: 'parent', title: 'aliased' },
+            content: { kind: 'inline', bytes: enc.encode('edge content'), size: 12, encoding: 'text/plain' },
+          },
+          {
+            reference: rootClaim.id,
+            type: 'relation/family',
+            relationDirection: -1,
+            content: { kind: 'external', hash: external, size: 12, encoding: 'application/octet-stream' },
+          },
+        ],
+      }),
+    },
+    {
+      label: 'a diff claim, which carries the diff edge as well as the contributor',
+      built: newClaim({
+        type: 'source/note',
+        contributor,
+        createdAt: AT_NOTE,
+        height: 2,
+        diffOf: base.id,
+        edges: [{ reference: base.id, type: 'derivation/note', fields: { name: 'body' } }],
+      }),
+    },
+    {
+      label: 'a signed claim, whose id is a signature rather than a hash',
+      built: newClaim({
+        type: 'contribution/contributor',
+        createdAt: AT_ROOT,
+        content: { kind: 'inline', bytes: pubkey, size: pubkey.length, encoding: 'application/octet-stream' },
+        signer: { pubkey, sign: () => new Uint8Array(64).fill(9) },
+      }),
+    },
+    {
+      label: 'a delete_by an edge takes from its target',
+      built: newClaim({
+        type: 'derivation/summary',
+        contributor,
+        createdAt: AT_DERIVED,
+        height: 2,
+        fields: { delete_by: '2030-01-01T00:00:00.000000000Z' },
+        edges: [{ reference: base.id, type: 'derivation/note', referenced: base.claim }],
+      }),
+    },
+  ]
+}
+
+// The strings a record carries survive the wire only where the builder holds them to a
+// charset and a canonical form, so each of these would otherwise be built into bytes
+// that read back as something else.
+test('a record slot the wire would render differently is refused', () => {
+  const contributor = root()
+  const source = (over: Partial<ClaimInput>) => () =>
+    newClaim({ type: 'source/note', contributor, createdAt: AT_ROOT, height: 1, ...over })
+
+  assert.throws(
+    source({
+      content: { kind: 'inline', bytes: enc.encode('x'), size: 1, encoding: '.t/plain' },
+    }),
+    RankeBuildError,
+    'an encoding class opening with the alias prefix',
+  )
+  assert.throws(
+    source({ content: { kind: 'external', hash: fx.ids.source!, size: 3, encoding: 'text/plain' } }),
+    RankeBuildError,
+    'a content_hash that is a signature rather than a multihash',
+  )
+  assert.throws(
+    source({
+      content: { kind: 'external', hash: fx.ids.scanHash!, size: 2 ** 60, encoding: 'text/plain' },
+    }),
+    RankeBuildError,
+    'a content size beyond what a number holds exactly',
+  )
+  assert.throws(source({ height: 2 ** 60 }), RankeBuildError, 'a height beyond 2^53')
+  assert.throws(source({ height: -1 }), RankeBuildError, 'a negative height')
+  assert.throws(source({ fields: { title: '\ud800' } }), RankeBuildError, 'an unpaired surrogate')
+})
+
+// An id reaches a record in the form its own bytes render, so an edge names its target
+// the way a reader of those bytes will see it. A payload whose length is a multiple of
+// five has one base32 digit of room past its last byte, so it has a longer spelling too.
+test('an edge reference is stored in canonical form', () => {
+  const id = idFromBytes(new Uint8Array(35).fill(7)).toString()
+  const longer = `${id}a` // one more digit, carrying padding bits alone
+  assert.equal(newEdge({ reference: longer, type: 'derivation/note' }).reference, id)
 })
 
 // --- signing ---

@@ -299,6 +299,68 @@ function decodeEdge(raw: Uint8Array, opts: DecodeOptions): Edge {
 }
 
 /**
+ * claimFromRecord is the Claim a decode of encodeClaim(n) yields, arrived at from the
+ * record instead of the bytes — what a builder holding the record wants, since parsing
+ * back its own output costs a seventh of a build.
+ *
+ * It rests on every string a record carries being charset-clean and canonical, which
+ * claim_builder.ts holds its input to, and on the alias tables being bijections, which
+ * the taxonomy tests hold them to: the wire then renders those strings back unchanged.
+ * `claim_builder_test.ts` proves the agreement over every builder case.
+ *
+ * The agreement is by value. A field map is a map, so the record's own key order reaches
+ * the claim, where a decode's carries the canonical order the bytes were written in.
+ *
+ * ranke-go needs no counterpart — its Node already satisfies Claim, where a decoded
+ * claim here is plain data (see README).
+ *
+ * @internal
+ */
+export function claimFromRecord(n: NodeRecord, id: string): Claim {
+  return Object.freeze({
+    id,
+    type: `${n.typeClass}/${n.typeSub}`,
+    typeClass: n.typeClass,
+    typeSub: n.typeSub,
+    createdAt: n.createdAt,
+    createdAtMs: parseCreatedAt(n.createdAt),
+    height: n.height,
+    fields: Object.freeze({ ...n.fields }),
+    content: contentFromRef(n.content),
+    edges: Object.freeze((n.edges ?? []).map(edgeFromRecord)),
+  })
+}
+
+function edgeFromRecord(e: EdgeRecord): Edge {
+  return Object.freeze({
+    reference: e.reference,
+    type: `${e.typeClass}/${e.typeSub}`,
+    typeClass: e.typeClass,
+    typeSub: e.typeSub,
+    fields: Object.freeze({ ...e.fields }),
+    relationDirection: e.relationDirection ?? 0,
+    content: contentFromRef(e.content),
+  })
+}
+
+// contentFromRef is the declaration a decode reads back. Empty inline content leaves
+// no slot in the record, so the wire carries none; the bytes are copied, as a decode's
+// are, so the claim holds what no caller can reach afterwards.
+function contentFromRef(ref: ContentRef | undefined): ContentRef {
+  if (ref === undefined || ref.kind === 'none') return contentNone
+  if (ref.kind === 'external') {
+    return Object.freeze({ kind: 'external', hash: ref.hash, size: ref.size, encoding: ref.encoding })
+  }
+  if (ref.bytes.length === 0) return contentNone
+  return Object.freeze({
+    kind: 'inline',
+    bytes: Uint8Array.from(ref.bytes),
+    size: ref.size,
+    encoding: ref.encoding,
+  })
+}
+
+/**
  * parseCreatedAt returns epoch milliseconds for an RFC 3339 timestamp, dropping any
  * precision past the millisecond — which is why claim.createdAt keeps the string.
  */

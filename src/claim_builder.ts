@@ -12,12 +12,12 @@ import type { Claim, Edge } from './claim.ts'
 import {
   type EdgeRecord,
   type NodeRecord,
-  decodeClaim,
+  claimFromRecord,
   encodeClaim,
   encodeEdge,
   encodeNode,
 } from './codec.ts'
-import { type ContentRef, contentSize } from './content.ts'
+import type { ContentRef } from './content.ts'
 import {
   EdgeClassContribution,
   EdgeClassDerivation,
@@ -132,7 +132,9 @@ export function newEdge(input: EdgeInput): EdgeRecord {
 
 function buildEdge(input: EdgeInput): BuiltEdge {
   if (input.reference === '') throw new RankeBuildError('an edge states no reference')
-  parseId(input.reference) // a malformed reference is refused here, not on the wire
+  // A malformed reference is refused here, not on the wire. The record keeps the id as
+  // its bytes render it, which is the form a reader of those bytes sees.
+  const reference = parseId(input.reference).toString()
 
   const { typeClass, typeSub } = resolveType(input.type, input.typeClass, input.typeSub, 'edge')
   if (!validEdgeClass(typeClass)) {
@@ -166,7 +168,7 @@ function buildEdge(input: EdgeInput): BuiltEdge {
   checkFields(fields)
 
   const record: EdgeRecord = {
-    reference: input.reference,
+    reference,
     typeClass,
     typeSub,
     relationDirection: dir,
@@ -182,8 +184,9 @@ function buildEdge(input: EdgeInput): BuiltEdge {
  * builds the edge set with the contributor edge the attribution requires, orders the
  * edges canonically, and computes the id over the canonical bytes.
  *
- * Returns the decoded claim alongside those bytes, so a caller can store or send
- * exactly what the id commits to.
+ * Returns the claim a decode of those bytes yields, assembled from the record rather
+ * than parsed back out of it, so a caller can store or send exactly what the id commits
+ * to. `claim_builder_test.ts` holds the two views to each other.
  */
 export function newClaim(input: ClaimInput): { claim: Claim; bytes: Uint8Array; id: string } {
   const { typeClass, typeSub } = resolveType(input.type, undefined, undefined, 'claim')
@@ -195,6 +198,10 @@ export function newClaim(input: ClaimInput): { claim: Claim; bytes: Uint8Array; 
   }
   checkContent(input.content)
   checkFields(input.fields)
+  const height = input.height ?? 0
+  if (!representableCount(height)) {
+    throw new RankeBuildError(`height ${height} is not a generation a record carries`)
+  }
 
   // A contribution/* claim is the structure a read walks, so none of it schedules its
   // own removal (R-DELBY scaffolding rule).
@@ -224,7 +231,7 @@ export function newClaim(input: ClaimInput): { claim: Claim; bytes: Uint8Array; 
     typeClass,
     typeSub,
     createdAt: normalizeCreatedAt(input.createdAt),
-    height: input.height ?? 0,
+    height,
     ...(input.fields === undefined ? {} : { fields: input.fields }),
     ...(input.content === undefined ? {} : { content: input.content }),
     ...(edges.length === 0 ? {} : { edges: edges.map((e) => e.record) }),
@@ -237,7 +244,7 @@ export function newClaim(input: ClaimInput): { claim: Claim; bytes: Uint8Array; 
       : idFromBytes(multikey(input.signer.sign(hash.rawBytes())))
 
   const bytes = encodeClaim(record)
-  return { claim: decodeClaim(bytes, id.toString()), bytes, id: id.toString() }
+  return { claim: claimFromRecord(record, id.toString()), bytes, id: id.toString() }
 }
 
 // assembleEdges builds the edge set, adds the contributor and diff edges the claim
@@ -369,14 +376,19 @@ function resolveType(
   return { typeClass, typeSub }
 }
 
-// checkContent holds a declaration to §Content: an encoding wherever content is
-// present, and inline bytes within the construction cap.
+// checkContent holds a declaration to V-CONTENT: an encoding wherever content is
+// present, its exact byte length, and inline bytes within the construction cap.
 function checkContent(content: ContentRef | undefined): void {
   if (content === undefined || content.kind === 'none') return
   if (content.encoding === '') {
     throw new RankeBuildError('a record carrying content declares an encoding')
   }
-  const { typeSub } = splitType(content.encoding)
+  const { typeClass, typeSub } = splitType(content.encoding)
+  // Both halves take the media-type charset, the class as much as the subtype: a class
+  // opening with the alias prefix would name one media type here and another on the wire.
+  if (!validEncodingSubtype(typeClass)) {
+    throw new RankeBuildError(`invalid encoding class ${JSON.stringify(typeClass)}`)
+  }
   if (!validEncodingSubtype(typeSub)) {
     throw new RankeBuildError(`invalid encoding subtype ${JSON.stringify(typeSub)}`)
   }
@@ -393,10 +405,24 @@ function checkContent(content: ContentRef | undefined): void {
     }
     return
   }
-  parseId(content.hash)
-  if (contentSize(content) === 0) {
+  // External content is addressed by H(content) (V-CONTENT), so the address is a
+  // multihash of the one algorithm the ADT hashes with, and a reader accepts nothing else.
+  const address = parseId(content.hash)
+  if (address.algorithm() !== 'sha2-256') {
+    throw new RankeBuildError(`a content_hash is a sha2-256 multihash, not ${address.algorithm()}`)
+  }
+  if (content.size === 0) {
     throw new RankeBuildError('external content states its size')
   }
+  if (!representableCount(content.size)) {
+    throw new RankeBuildError(`content_size ${content.size} is not a length a record carries`)
+  }
+}
+
+// representableCount holds a count to what a record carries and a number holds exactly:
+// a size or a height beyond 2^53 reads back as a different value.
+function representableCount(n: number): boolean {
+  return Number.isSafeInteger(n) && n >= 0
 }
 
 function checkFields(fields: Readonly<Record<string, string>> | undefined): void {
@@ -409,8 +435,14 @@ function checkFields(fields: Readonly<Record<string, string>> | undefined): void
     if (!validFieldChars(name)) {
       throw new RankeBuildError(`invalid field name ${JSON.stringify(name)}`)
     }
-    if (fields[name]!.length > maxFieldValueLen) {
+    const value = fields[name]!
+    if (value.length > maxFieldValueLen) {
       throw new RankeBuildError(`field ${name} exceeds ${maxFieldValueLen} bytes`)
+    }
+    // The canonical encoding writes U+FFFD where a string carries an unpaired surrogate,
+    // so such a value would be stored as a different value than the one given.
+    if (/\p{Surrogate}/u.test(value)) {
+      throw new RankeBuildError(`field ${name} carries an unpaired surrogate`)
     }
   }
 }
