@@ -31,7 +31,7 @@ export class Id {
   /** Callers reach an Id through hashContent, parseId, or idFromBytes. */
   private constructor(raw: Uint8Array) {
     this.#raw = raw
-    this.#str = MULTIBASE_BASE32 + base32Encode(raw)
+    this.#str = multibaseEncode(raw)
   }
 
   /** The multibase string form, as ranke-go's String() renders it. */
@@ -146,8 +146,10 @@ function readVarint(b: Uint8Array, off: number): { value: number; next: number }
   return null
 }
 
-function base32Encode(b: Uint8Array): string {
-  let out = ''
+// multibaseEncode renders the prefix and the digits as one flat string: a `+=` per
+// digit leaves a 57-node rope per id, and a decoded claim names hundreds of ids.
+function multibaseEncode(b: Uint8Array): string {
+  const parts: string[] = [MULTIBASE_BASE32]
   let bits = 0
   let acc = 0
   for (const byte of b) {
@@ -155,11 +157,11 @@ function base32Encode(b: Uint8Array): string {
     bits += 8
     while (bits >= 5) {
       bits -= 5
-      out += B32_ALPHABET[(acc >>> bits) & 0x1f]
+      parts.push(B32_ALPHABET[(acc >>> bits) & 0x1f]!)
     }
   }
-  if (bits > 0) out += B32_ALPHABET[(acc << (5 - bits)) & 0x1f]
-  return out
+  if (bits > 0) parts.push(B32_ALPHABET[(acc << (5 - bits)) & 0x1f]!)
+  return parts.join('')
 }
 
 function base32Decode(s: string): Uint8Array {
