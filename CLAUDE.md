@@ -29,8 +29,19 @@ happens. Those that exist so far:
 
 # Scope
 
-Reading claims a server served. No signing, no storage, no diff materialisation,
-no query language — see README.md for why each is out.
+Reading claims a server served, and building the queries that ask for them. No
+signing, no storage, no diff materialisation, no query *execution* — see README.md
+for why each is out.
+
+A client sends queries, so the RankeQL `Query` type, its encoder and its shape
+checks belong here; executing one needs the graph and is RankeDB's. Mirror
+`query.go` and `query_codec.go` (minus `DecodeQuery` — nothing browser-side
+receives a query), never `query_default.go`.
+
+`src/query.ts` is GENERATED from the committed `schema/rql.schema.json` — never
+edit it. `make pull-rql-schema` takes a new release, `make generate` regenerates,
+and `make check-generated` refuses a release where the two drifted apart. A
+transcribed copy would give TypeScript its own version of the read language.
 
 A feature that would need a private key or a write path does not belong here.
 
@@ -62,7 +73,13 @@ existing entry; append only.
 - A test must not do the system's work for it. If a test calls the thing that
   production forgets to call, the test passes and reality fails.
 - Prefer an **oracle** to a fixture. `node:crypto` is the oracle for SHA-256;
-  ranke-go is the oracle for ids, encodings and claim bytes. Values transcribed
-  from the reference beat values this implementation produced.
-- Agreement with ranke-go proves the two agree, not that either is right. Where
-  both share a gap they agree happily — so also assert against the papers.
+  ranke-go is the oracle for ids, encodings, type globs and query verdicts.
+- **Never transcribe reference data by hand.** `tools/` holds Go programs that
+  emit it and `make fixtures` runs them. A hand-copied record is one nibble from
+  testing the wrong thing; that is how this rule was learnt, and the same day a
+  hand-written glob matcher shipped an infinite loop that the generated
+  `path.Match` table caught at once.
+- An artifact must trace to a **released** ranke-go, never a working copy, and the
+  version is recorded in the file. `tools/go.mod` therefore carries no `replace`
+  and no `go.work`: take new behaviour by releasing ranke-go and bumping the
+  requirement.

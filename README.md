@@ -11,9 +11,13 @@ file and name for name, so the two can be read side by side.
 
 ## Scope
 
-This library **reads** claims a server has already served:
+This library **reads** claims a server served, and **builds the queries** that
+ask for them:
 
 - decode the canonical CBOR of a claim into its node, edges, fields and content
+- decode the JSON projection, arriving at the same claim
+- read a result run as it streams: cbor-seq (RFC 8742) and json-seq (RFC 7464)
+- build, check and encode a RankeQL query
 - the closed type vocabularies and the wire alias tables
 - ids: the SHA2-256 multihash framing and the multibase string form
 
@@ -23,9 +27,38 @@ omissions are deliberate:
 - **Diff materialisation** stays server-side. A `contribution/diff` claim
   carries a delta, and resolving it means walking the chain — work a server
   does once for every reader.
-- **Queries** belong to RankeDB, which publishes its own generated client.
-  RankeQL is a RankeDB construct (spec §RankeQL); the ADT defines no query
-  language.
+- **Query execution** is RankeDB's. A client sends queries, so the `Query` type,
+  its encoder and its shape checks belong here; answering one needs the graph and
+  a planner, which do not.
+
+## Queries
+
+`Query` is generated from ranke-graph's released `rql.schema.json` — the same
+document ranke-go implements and ranke-db's `openapi.yaml` references — so
+TypeScript holds no second copy of the read language.
+
+```ts
+import { EncodeQuery, ValidateQuery, type Query } from '@flocko-motion/ranke'
+
+const q: Query = {
+  select: { branch: 'project_x', path: [{ edges: ['derivation/*'], max: 3 }] },
+  where: { field: 'type', test: { glob: 'source/*' } },
+  output: { encoding: 'cbor' },
+  limit: { results: 200, time: '5s' },
+}
+
+const body = EncodeQuery(q) // validates, then renders the canonical JSON
+```
+
+`ValidateQuery` applies the same rules ranke-go does, so both reach one verdict,
+and a `RankeQueryError` carries the `code` of the rule broken — `ErrQueryHops`,
+`ErrQueryWhereForm`, and the rest, named as ranke-go names them. Two of those
+rules ranke-go enforces when a read runs; catching them here saves the round trip
+the server would spend refusing.
+
+Three values exist on ranke-go's side and not on the wire: `output.encoding`
+`native`, and `execution.report` `error` and `warn`. The schema excludes all
+three, so the generated type refuses them without a rule of its own.
 
 ## Install
 
@@ -90,9 +123,15 @@ canonicity, the closed vocabularies, and the inline/external content rule
 itself; the types sit on top as a convenience.
 
 **The alias tables are normative.** Ids are computed over the aliased bytes, so
-an entry that differs from ranke-go's gives one claim two encodings. The tables
-here are transcribed from ranke-go and pinned by tests against reference values
-it produced.
+an entry that differs from ranke-go's gives one claim two encodings.
+
+**Reference data is generated, never transcribed.** ranke-go is the reference
+implementation, so its output is the specification rather than a sample of it.
+`tools/` holds Go programs that emit it — claims in both encodings, Go's
+`path.Match` over 476 pattern/name pairs, and ranke-go's verdict on 43 queries.
+Each records the ranke-go release it came from, and the suite refuses a set that
+names no release. A hand-copied fixture is one nibble from testing the wrong
+thing, which is how this rule was learnt.
 
 ## Development
 
@@ -100,16 +139,29 @@ Node 22 or newer. Node runs the TypeScript sources directly by stripping types,
 so the tests need no build step.
 
 ```sh
-npm install
-npm test          # node --test over src/**/*_test.ts
-npm run typecheck # tsc over sources and tests
-npm run build     # emit dist/ with .d.ts
+make install
+make test       # with a floor: node --test exits 0 on an empty glob
+make typecheck  # sources and tests
+make build      # emit dist/ with .d.ts
+make verify     # the three above, as a release must pass them
 ```
 
 `tsconfig.json` sets `erasableSyntaxOnly`, which holds the source to the subset
 Node can strip: no `enum`, no `namespace`, no parameter properties. String
 unions stand in for enums, which also keeps the emitted values identical to
 ranke-go's constants.
+
+Two steps need a toolchain beyond npm, so both are deliberate rather than part of
+`verify`:
+
+```sh
+make fixtures         # regenerate the reference data (needs Go)
+make pull-rql-schema  # take ranke-graph's released RQL schema
+make generate         # regenerate src/query.ts from the committed schema
+```
+
+Taking a new ranke-go release means bumping `tools/go.mod` and running
+`make fixtures`; a test then fails wherever the two implementations moved apart.
 
 ## Licence
 

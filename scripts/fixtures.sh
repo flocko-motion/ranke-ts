@@ -24,4 +24,7 @@ echo ">> claims (tools/fixtures)"
 echo ">> path.Match table (tools/globoracle)"
 (cd tools && go run ./globoracle) > src/testing/glob_oracle.json
 
+echo ">> query verdicts (tools/queryoracle)"
+(cd tools && go run ./queryoracle) > src/testing/query_oracle.json
+
 echo ">> regenerated; run 'make test' to see whether anything moved"

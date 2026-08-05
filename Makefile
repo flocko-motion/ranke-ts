@@ -2,7 +2,8 @@
 #
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
-.PHONY: all install test typecheck build clean verify release fixtures docs docs-clean \
+.PHONY: all install test typecheck build clean verify release fixtures generate \
+	pull-rql-schema check-generated docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -26,6 +27,23 @@ test:
 # is a deliberate step rather than part of `verify`.
 fixtures:
 	@./scripts/fixtures.sh
+
+# Take ranke-graph's released RQL schema, then regenerate the Query type from it.
+# Both are deliberate: the schema is committed so the build stays offline, and taking
+# a new one leaves a reviewable diff.
+pull-rql-schema:
+	@./scripts/pull-rql-schema.sh
+
+generate:
+	@./scripts/generate.sh
+
+# Refuses a release whose generated Query type no longer matches the committed
+# schema — the artifact and its source must move together.
+check-generated: generate
+	@git diff --quiet -- src/query.ts || { \
+		echo "src/query.ts is stale — run 'make generate' and commit the result" >&2; \
+		exit 1; \
+	}
 
 # Covers the tests too, which the build config excludes.
 typecheck:
