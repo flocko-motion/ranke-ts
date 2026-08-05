@@ -113,7 +113,7 @@ func main() {
 		{
 			"every output axis",
 			`{"select":{"branch":"main","path":[{}]},"output":{"shape":"path","detail":"claims",` +
-				`"form":"original","encoding":"cbor","content":{"max":4096,"overflow":"reference"}}}`,
+				`"form":"original","encoding":"cbor","content":{"max":4096,"overflow":"cutoff"}}}`,
 		},
 		{"a zero content cap", `{"select":{"branch":"main"},"output":{"content":{"max":0,"overflow":"omit"}}}`},
 		{
@@ -153,6 +153,10 @@ func main() {
 		{"an unknown encoding", `{"select":{"branch":"main"},"output":{"encoding":"yaml"}}`},
 		{"content without an overflow rule", `{"select":{"branch":"main"},"output":{"content":{"max":10}}}`},
 		{"an unknown overflow rule", `{"select":{"branch":"main"},"output":{"content":{"max":10,"overflow":"wrap"}}}`},
+		// "reference" left the vocabulary: it stood in for content a claim had, where
+		// R-QCONTENT now has a claim keep every field either way.
+		{"the retired reference overflow", `{"select":{"branch":"main"},"output":{"content":{"max":10,"overflow":"reference"}}}`},
+		{"max 0 inlines content in full", `{"select":{"branch":"main"},"output":{"content":{"max":0,"overflow":"omit"}}}`},
 		{"an unknown collation", `{"select":{"branch":"main"},"order":[{"field":"a","compare":"natural"}]}`},
 		{"an unknown sort direction", `{"select":{"branch":"main"},"order":[{"field":"a","dir":"up"}]}`},
 		{"a report level only a Go caller may set", `{"select":{"branch":"main"},"execution":{"report":"warn"}}`},
