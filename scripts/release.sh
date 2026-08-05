@@ -88,10 +88,31 @@ for _ in $(seq 1 120); do
 		echo "the pull request closed without merging — no tag cut" >&2
 		exit 1
 	fi
+	# A failed check leaves the PR OPEN with the merge still queued, so waiting out
+	# the timeout reports a red CI ten minutes after it was knowable. Read the rollup
+	# and stop on the first check that failed. A rollup entry is a check run (name,
+	# conclusion) or a commit status (context, state), so both spellings are read.
+	failed="$(gh pr view "$start" --json statusCheckRollup --jq '
+		.statusCheckRollup
+		| map(select((.conclusion // .state) as $c
+			| $c == "FAILURE" or $c == "CANCELLED" or $c == "TIMED_OUT"
+				or $c == "ACTION_REQUIRED" or $c == "ERROR"))
+		| map(.name // .context) | join(", ")' 2>/dev/null || true)"
+	if [ -n "$failed" ] && [ "$failed" != "null" ]; then
+		cat >&2 <<-MSG
+			CI failed on '$start' ($failed) — no tag cut.
+
+			  see:  gh pr checks $start
+			  logs: gh run view --log-failed
+
+			The merge stays queued, so pushing a fix to '$start' lands it.
+		MSG
+		exit 1
+	fi
 	sleep 5
 done
 if [ "$state" != "MERGED" ]; then
-	echo "the pull request has not merged after 10 minutes (CI red, or auto-merge off)." >&2
+	echo "the pull request has not merged after 10 minutes (checks pending, or auto-merge off)." >&2
 	echo "  check: gh pr checks $start" >&2
 	exit 1
 fi

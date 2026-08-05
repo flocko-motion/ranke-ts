@@ -1,0 +1,129 @@
+// package: ranke / codec_json
+// type:    io
+// job:     the JSON projection to a Claim — every record slot, content base64
+// limits:  reads a claim; an id is verified against the CBOR form, whose bytes it was signed
+// over (spec §Output). A read may also cap the content JSON inlines.
+
+import type { Claim, Edge } from './claim.ts'
+import { RankeDecodeError, parseCreatedAt } from './codec.ts'
+import { type ContentRef, contentNone } from './content.ts'
+import type { RelationDirection } from './edge_taxonomy.ts'
+import { splitType } from './filter.ts'
+
+/**
+ * WireClaim is the JSON a read returns under `encoding: json`, as ranke-go's
+ * EncodeJSON renders it. Fields nest, since a field name may be spelled like a
+ * structural key and flattening would let it overwrite one.
+ */
+export interface WireClaim {
+  id?: string
+  type?: string
+  created_at?: string
+  height?: number
+  encoding?: string
+  content_size?: number
+  content_hash?: string
+  content?: string
+  fields?: Record<string, string>
+  edges?: WireEdge[]
+}
+
+/** WireEdge is one edge of a WireClaim. */
+export interface WireEdge {
+  type?: string
+  reference?: string
+  relation_direction?: number
+  encoding?: string
+  content_size?: number
+  content_hash?: string
+  content?: string
+  fields?: Record<string, string>
+}
+
+/**
+ * decodeClaimJSON turns one JSON record into a Claim, so a caller reads the same
+ * shape whichever encoding it asked the server for.
+ *
+ * The id comes from the record, which the JSON form carries and the CBOR form does
+ * not — a projection names the claim it reports.
+ */
+export function decodeClaimJSON(w: WireClaim): Claim {
+  if (typeof w !== 'object' || w === null) {
+    throw new RankeDecodeError('a JSON claim is an object')
+  }
+  const type = str(w.type, 'type')
+  const { typeClass, typeSub } = splitType(type)
+  const createdAt = str(w.created_at, 'created_at')
+
+  return Object.freeze({
+    id: w.id ?? '',
+    type,
+    typeClass,
+    typeSub,
+    createdAt,
+    createdAtMs: parseCreatedAt(createdAt),
+    height: num(w.height, 'height'),
+    fields: Object.freeze({ ...(w.fields ?? {}) }),
+    content: wireContent(w),
+    edges: Object.freeze((w.edges ?? []).map(decodeEdgeJSON)),
+  })
+}
+
+function decodeEdgeJSON(w: WireEdge): Edge {
+  const type = str(w.type, 'edge type')
+  const { typeClass, typeSub } = splitType(type)
+  const dir = w.relation_direction ?? 0
+  if (dir !== 0 && dir !== 1 && dir !== -1) {
+    throw new RankeDecodeError(`relation_direction is +1 or -1, got ${dir}`)
+  }
+  return Object.freeze({
+    reference: str(w.reference, 'edge reference'),
+    type,
+    typeClass,
+    typeSub,
+    fields: Object.freeze({ ...(w.fields ?? {}) }),
+    relationDirection: dir as RelationDirection,
+    content: wireContent(w),
+  })
+}
+
+// wireContent resolves the declaration a JSON record carries. Content is base64, as
+// JSON renders bytes, and a capped read may leave a hash where the bytes were.
+function wireContent(w: WireClaim | WireEdge): ContentRef {
+  const encoding = w.encoding ?? ''
+  const size = w.content_size ?? 0
+  if (w.content !== undefined) {
+    if (w.content_hash !== undefined) {
+      throw new RankeDecodeError('a record declares both inline content and a content hash')
+    }
+    return Object.freeze({ kind: 'inline', bytes: base64(w.content), size, encoding })
+  }
+  if (w.content_hash !== undefined) {
+    return Object.freeze({ kind: 'external', hash: w.content_hash, size, encoding })
+  }
+  return contentNone
+}
+
+function str(v: unknown, what: string): string {
+  if (typeof v !== 'string' || v === '') {
+    throw new RankeDecodeError(`a JSON claim states no ${what}`)
+  }
+  return v
+}
+
+function num(v: unknown, what: string): number {
+  if (v === undefined) return 0
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+    throw new RankeDecodeError(`${what} is a non-negative integer, got ${String(v)}`)
+  }
+  return v
+}
+
+// base64 decodes without Buffer, which a browser lacks. atob yields one character
+// per byte, so the mapping back is direct.
+function base64(s: string): Uint8Array {
+  const bin = atob(s)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}

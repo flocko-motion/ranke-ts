@@ -29,10 +29,31 @@ happens. Those that exist so far:
 
 # Scope
 
-Reading claims a server served. No signing, no storage, no diff materialisation,
-no query language — see README.md for why each is out.
+Reading claims a server served, building claims, and building the queries that ask
+for them. No key material, no storage, no diff materialisation, no query
+*execution* — see README.md for why each is out.
 
-A feature that would need a private key or a write path does not belong here.
+Signing is injected: a `Signer` turns the 34-byte multihash of S(v) into a
+signature, so an application's key never enters this library. Without one a claim
+is identity-signed, which §5.7 admits wherever the contributor publishes no key.
+
+A client sends queries, so the RankeQL `Query` type, its encoder and its shape
+checks belong here; executing one needs the graph and is RankeDB's. Mirror
+`query.go` and `query_codec.go` (minus `DecodeQuery` — nothing browser-side
+receives a query), never `query_default.go`.
+
+`src/query.ts` is GENERATED from the committed `schema/rql.schema.json` — never
+edit it. `make pull-rql-schema` takes a new release, `make generate` regenerates,
+and `make check-generated` refuses a release where the two drifted apart. A
+transcribed copy would give TypeScript its own version of the read language.
+
+A feature that would hold key material or reach a store does not belong here.
+
+The encoder must produce ranke-go's bytes exactly: an id is computed over them, so
+one byte apart is a different claim. `codec_encode_test.ts` re-encodes every fixture
+and compares against `nodePreimage` of ranke-go's own output, which needs no key;
+`claim_builder_test.ts` rebuilds the identity-signed fixtures and compares ids.
+Never change the encoder without those passing.
 
 # The alias tables are normative
 
@@ -62,7 +83,19 @@ existing entry; append only.
 - A test must not do the system's work for it. If a test calls the thing that
   production forgets to call, the test passes and reality fails.
 - Prefer an **oracle** to a fixture. `node:crypto` is the oracle for SHA-256;
-  ranke-go is the oracle for ids, encodings and claim bytes. Values transcribed
-  from the reference beat values this implementation produced.
-- Agreement with ranke-go proves the two agree, not that either is right. Where
-  both share a gap they agree happily — so also assert against the papers.
+  ranke-go is the oracle for ids, encodings, type globs and query verdicts.
+- **Never transcribe reference data by hand.** `tools/` holds Go programs that
+  emit it and `make fixtures` runs them. A hand-copied record is one nibble from
+  testing the wrong thing; that is how this rule was learnt, and the same day a
+  hand-written glob matcher shipped an infinite loop that the generated
+  `path.Match` table caught at once.
+- An artifact must trace to a **released** ranke-go, never a working copy, and the
+  version is recorded in the file. `tools/go.mod` therefore carries no `replace`
+  and no `go.work`: take new behaviour by releasing ranke-go and bumping the
+  requirement.
+- `vectors_test.ts` runs ranke-graph's published set, which is the spec's artifact
+  and the only reference data here with cases that must be REFUSED. Agreement on
+  what to accept says nothing about what a reader lets through. A case this
+  library cannot decide is named individually, never skipped by category.
+- An unreachable artifact set is a failure, not a skip: silently not checking
+  conformance is the one outcome worse than a red run.

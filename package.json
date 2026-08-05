@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "json-schema-to-typescript": "^15.0.4",
     "typescript": "^5.9.0"
   },
   "repository": {

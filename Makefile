@@ -2,7 +2,8 @@
 #
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
-.PHONY: all install test typecheck build clean verify release docs docs-clean \
+.PHONY: all install test typecheck build clean testdata-clean verify release fixtures \
+	generate pull-rql-schema check-generated docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -17,9 +18,32 @@ all: typecheck test build
 install:
 	npm install
 
-# Node strips types, so the sources run as they are — no build before a test.
+# Node strips types, so the sources run as they are — no build before a test. The
+# script adds a floor: `node --test` exits 0 when its glob matches nothing.
 test:
-	npm test
+	@./scripts/test.sh
+
+# Regenerate the reference data from a released ranke-go. Needs a Go toolchain, so it
+# is a deliberate step rather than part of `verify`.
+fixtures:
+	@./scripts/fixtures.sh
+
+# Take ranke-graph's released RQL schema, then regenerate the Query type from it.
+# Both are deliberate: the schema is committed so the build stays offline, and taking
+# a new one leaves a reviewable diff.
+pull-rql-schema:
+	@./scripts/pull-rql-schema.sh
+
+generate:
+	@./scripts/generate.sh
+
+# Refuses a release whose generated Query type no longer matches the committed
+# schema — the artifact and its source must move together.
+check-generated: generate
+	@git diff --quiet -- src/query.ts || { \
+		echo "src/query.ts is stale — run 'make generate' and commit the result" >&2; \
+		exit 1; \
+	}
 
 # Covers the tests too, which the build config excludes.
 typecheck:
@@ -30,6 +54,10 @@ build:
 
 clean:
 	rm -rf dist
+
+# Drop the cached artifact set, so the next run takes the current release.
+testdata-clean:
+	rm -rf testdata
 
 # The gate a release must pass. ranke-go splits the fast checks from its full
 # suite; here the whole lot runs in under a second, so `verify` is `all`.
