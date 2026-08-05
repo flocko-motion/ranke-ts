@@ -10,6 +10,7 @@ import {
   readRawRecords,
   readRecords,
 } from './codec_seq.ts'
+import { CborWriter, encodeText, encodeUint } from './internal/cbor.ts'
 import * as fx from './testing/fixtures.ts'
 
 // A result run is thousands of claims arriving over a stream, so the reader is fed
@@ -277,6 +278,94 @@ test('ids read at every chunk size', async () => {
     const got: string[] = []
     for await (const id of readIds(bodyOf(bytes, size))) got.push(id)
     assert.deepEqual(got, ids, `chunk ${size}`)
+  }
+})
+
+// --- the same kinds under cbor framing ---
+//
+// A JSON record in a CBOR sequence mis-decodes rather than failing: a leading '"' is
+// 0x22, a valid CBOR negative integer. So every payload in a cbor-seq is CBOR, and the
+// four kinds are told apart by major type — text for an id, array for a route, a map
+// with integer keys for a claim, a map with text keys for the report.
+
+function cborSeq(...records: Uint8Array[]): Uint8Array {
+  const total = records.reduce((n, r) => n + r.length, 0)
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const r of records) {
+    out.set(r, at)
+    at += r.length
+  }
+  return out
+}
+
+function cborText(s: string): Uint8Array {
+  const w = new CborWriter()
+  w.writeText(s)
+  return w.bytes()
+}
+
+function cborTextArray(items: readonly string[]): Uint8Array {
+  const w = new CborWriter()
+  w.writeArrayHeader(items.length)
+  for (const s of items) w.writeText(s)
+  return w.bytes()
+}
+
+function cborReport(): Uint8Array {
+  const w = new CborWriter()
+  w.writeSortedMap([
+    [encodeText('started_at'), encodeText('2026-01-02T03:04:05Z')],
+    [encodeText('elapsed_ns'), encodeUint(1_500_000_000)],
+    [encodeText('results'), encodeUint(1)],
+  ])
+  return w.bytes()
+}
+
+test('an identity sequence reads under cbor framing too', async () => {
+  const ids = [fx.ids.source!, fx.ids.entity!]
+  const bytes = cborSeq(...ids.map(cborText))
+  const got: string[] = []
+  for await (const id of readIds(bodyOf(bytes), 'cbor')) got.push(id)
+  assert.deepEqual(got, ids)
+})
+
+test('every cbor record kind is told apart by its major type', async () => {
+  const bytes = cborSeq(
+    cborText(fx.ids.source!),
+    cborTextArray([fx.ids.entity!, fx.ids.source!]),
+    fx.cborBytes(fx.source),
+    cborReport(),
+  )
+  const records: ResultRecord[] = []
+  for await (const rec of readRecords(bodyOf(bytes), 'cbor')) records.push(rec)
+
+  assert.deepEqual(
+    records.map((r) => r.kind),
+    ['claim_id', 'path_id', 'claim', 'report'],
+  )
+  const [id, route, claim, report] = records
+  assert.equal(id?.kind === 'claim_id' ? id.id : null, fx.ids.source)
+  assert.deepEqual(route?.kind === 'path_id' ? route.ids : null, [fx.ids.entity, fx.ids.source])
+  assert.equal(claim?.kind === 'claim' ? claim.claim.type : null, 'source/register')
+  assert.ok(report?.kind === 'report')
+  assert.equal(report.report.results, 1)
+  assert.equal(report.report.elapsed_ns, 1_500_000_000, 'nanoseconds, as the name says')
+})
+
+test('a cbor claim reader passes over a trailing report', async () => {
+  const bytes = cborSeq(fx.cborBytes(fx.source), cborReport())
+  const types: string[] = []
+  for await (const c of readClaims(bodyOf(bytes), 'cbor')) types.push(c.type)
+  assert.deepEqual(types, ['source/register'])
+})
+
+test('cbor records read at every chunk size', async () => {
+  const bytes = cborSeq(cborText(fx.ids.source!), fx.cborBytes(fx.source), cborReport())
+  for (const size of [1, 3, 17, 64, 4096]) {
+    const kinds: string[] = []
+    for await (const rec of readRecords(bodyOf(bytes, size), 'cbor')) kinds.push(rec.kind)
+    assert.deepEqual(kinds, ['claim_id', 'claim', 'report'], `chunk ${size}`)
   }
 })
 

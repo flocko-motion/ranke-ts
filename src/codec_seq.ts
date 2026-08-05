@@ -20,18 +20,26 @@ import { CborReader } from './internal/cbor.ts'
 export type SeqEncoding = 'cbor' | 'json'
 
 /**
- * QueryReport trails a stream when execution.report was set.
- *
- * The field names are Go's: ranke-go's QueryReport carries no json tags, so it
- * serialises capitalised where every other wire shape here is lower-case. Expect
- * these to change if tags are added.
+ * QueryReport trails a stream when execution.report was set. A duration carries its
+ * unit in the name, being a bare integer of nanoseconds.
  */
 export interface QueryReport {
-  readonly StartedAt?: string
-  readonly Elapsed?: number
-  readonly Results?: number
-  readonly Truncated?: boolean
-  readonly Events?: readonly Record<string, unknown>[]
+  readonly started_at?: string
+  readonly elapsed_ns?: number
+  readonly results?: number
+  readonly truncated?: boolean
+  readonly events?: readonly QueryEvent[]
+}
+
+/** QueryEvent is one logged step or point during execution. */
+export interface QueryEvent {
+  readonly at_ns?: number
+  readonly engine?: string
+  readonly op?: string
+  readonly level?: string
+  readonly duration_ns?: number
+  readonly detail?: string
+  readonly attrs?: Record<string, unknown>
 }
 
 /**
@@ -121,11 +129,7 @@ export function decodeResultRecord(
   encoding: SeqEncoding,
   opts: DecodeOptions = {},
 ): ResultRecord {
-  if (encoding === 'cbor') {
-    // A CBOR record is a claim: RankeDB writes an id or a report as JSON whatever the
-    // framing, which a CBOR sequence cannot carry — ask for those under json.
-    return { kind: 'claim', claim: decodeClaim(raw, '', opts) }
-  }
+  if (encoding === 'cbor') return decodeCborRecord(raw, opts)
 
   const text = utf8.decode(raw).trim()
   const value: unknown = JSON.parse(text)
@@ -147,6 +151,79 @@ export function decodeResultRecord(
     return { kind: 'claim', claim: decodeClaimJSON(record as WireClaim) }
   }
   return { kind: 'report', report: record as QueryReport }
+}
+
+// CBOR major types, read from a record's first byte to tell what it carries. Under
+// cbor framing every payload is CBOR, including the ones that are not claims, so the
+// same four kinds are discriminable as they are under json.
+const MAJOR_TEXT = 3
+const MAJOR_ARRAY = 4
+const MAJOR_MAP = 5
+
+function decodeCborRecord(raw: Uint8Array, opts: DecodeOptions): ResultRecord {
+  if (raw.length === 0) throw new RankeDecodeError('an empty record carries nothing')
+  switch (raw[0]! >> 5) {
+    case MAJOR_TEXT: {
+      const r = new CborReader(raw)
+      const id = r.readText()
+      r.expectEnd()
+      return { kind: 'claim_id', id }
+    }
+    case MAJOR_ARRAY: {
+      const r = new CborReader(raw)
+      const n = r.readArrayHeader()
+      const ids: string[] = []
+      for (let i = 0; i < n; i++) ids.push(r.readText())
+      r.expectEnd()
+      return { kind: 'path_id', ids }
+    }
+    case MAJOR_MAP: {
+      // A claim's record keys are integers (codec.ts encNode); a report's are text.
+      const r = new CborReader(raw)
+      r.readMapHeader()
+      const keyMajor = raw[r.position]! >> 5
+      if (keyMajor === MAJOR_TEXT) return { kind: 'report', report: readCborReport(raw) }
+      return { kind: 'claim', claim: decodeClaim(raw, '', opts) }
+    }
+    default:
+      throw new RankeDecodeError(
+        `a result record is a text string, a list or a map, got CBOR major type ${raw[0]! >> 5}`,
+      )
+  }
+}
+
+// readCborReport reads the report's text-keyed map. Its values vary by field, so each
+// is taken as raw bytes and read by its own key rather than by a shared shape.
+function readCborReport(raw: Uint8Array): QueryReport {
+  const r = new CborReader(raw)
+  const n = r.readMapHeader()
+  const out: Record<string, unknown> = {}
+  for (let i = 0; i < n; i++) {
+    const key = r.readText()
+    const value = r.skipValue()
+    out[key] = readCborScalar(value)
+  }
+  r.expectEnd()
+  return out as QueryReport
+}
+
+function readCborScalar(raw: Uint8Array): unknown {
+  const r = new CborReader(raw)
+  switch (raw[0]! >> 5) {
+    case MAJOR_TEXT:
+      return r.readText()
+    case 0:
+    case 1: {
+      const v = r.readInt()
+      return v >= BigInt(Number.MIN_SAFE_INTEGER) && v <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? Number(v)
+        : v
+    }
+    default:
+      // An event list or an attrs map: handed back as bytes, since a diagnostic's
+      // shape is the server's and a reader that needs it can decode further.
+      return raw
+  }
 }
 
 /**
