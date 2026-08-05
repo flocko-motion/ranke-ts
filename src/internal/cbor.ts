@@ -4,13 +4,12 @@
 // built with, and a reader that refuses anything non-canonical
 // limits:  the byte level only; which record fields exist is codec.ts's
 //
-// ranke-go takes this from fxamacker/cbor in CoreDetEncOptions mode, so no Go file
-// corresponds. Hand-rolled here for two reasons: the reader must hand back the raw
-// byte range of a value, since ids are computed over stored bytes and never over a
-// re-encode; and a permissive decoder would silently accept a non-canonical claim,
-// which for a content-addressed record is a defect rather than leniency.
+// ranke-go takes this from fxamacker/cbor, so no Go file corresponds. Hand-rolled for
+// two reasons: the reader hands back a value's raw byte range, since an id is computed
+// over stored bytes and never a re-encode; and a permissive decoder would accept a
+// non-canonical claim, which for a content-addressed record is a defect.
 
-/** RankeCborError reports bytes that are not canonical CBOR. */
+/** RankeCborError reports bytes lying outside canonical CBOR. */
 export class RankeCborError extends Error {
   override readonly name: string = 'RankeCborError'
 }

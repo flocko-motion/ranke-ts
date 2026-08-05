@@ -4,15 +4,14 @@ import test from 'node:test'
 
 import { type ResultRecord, readClaims, readIds, readRecords } from './codec_seq.ts'
 
-// seq_oracle.json holds framed result sequences as RankeDB serves them — every payload
-// kind against both encodings — with each record's bytes produced by ranke-go. The
-// other sequence tests build their records with this library's own writer, which
-// proves it self-consistent; these prove it reads what the reference writes.
+// seq_oracle.json holds framed result sequences — every payload kind against both
+// encodings — with each record's bytes produced by ranke-go. The other sequence tests
+// build their records with this library's own writer, so they prove it self-consistent;
+// these prove it reads what the reference writes.
 //
-// The framing (RFC 7464, RFC 8742) is applied by the generator rather than imported,
-// since RankeDB's sequenceFraming is internal to its core package. Both are published
-// standards; what these check is the payload encoding, which is where two
-// implementations can disagree.
+// The generator applies the framing (RFC 7464, RFC 8742) itself, RankeDB's being
+// internal to its core package. Both are published standards; what these check is the
+// payload encoding, where two implementations can disagree.
 interface SeqStream {
   label: string
   encoding: 'json' | 'cbor'

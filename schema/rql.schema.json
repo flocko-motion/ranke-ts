@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/flocko-motion/ranke-graph/refs/heads/main/spec/rql.schema.json",
   "title": "RankeQL (RQL)",
-  "description": "The query type of RankeQL (RQL), fixed here. This document governs a query's shape: the RankeQL chapter of the Ranke normative specification is still under review, so where the two differ this schema holds and the chapter follows it. The R-Q… ids below cite that chapter as a cross-reference, those ids being stable handles by its own convention. Published with every ranke-graph release at https://github.com/flocko-motion/ranke-graph/releases/latest/download/rql.schema.json. Three classes of rule lie outside a JSON Schema and belong to the implementation: a step's min against its max (R-QHOPS), head and claim resolving inside the closure (R-QHEAD, R-QANCHOR), and the framing of an id's payload.",
+  "description": "The query type of RankeQL (RQL), fixed here. This document governs a query's shape: the RankeQL chapter of the Ranke normative specification is still under review, so where the two differ this schema holds and the chapter follows it. The R-Q… ids below cite that chapter as a cross-reference, those ids being stable handles by its own convention. Published with every ranke-graph release at https://github.com/flocko-motion/ranke-graph/releases/latest/download/rql.schema.json. Three classes of rule lie outside a JSON Schema and belong to the implementation: a step's min against its max (R-QSTEPS), head and claim resolving inside the closure (R-QHEAD, R-QANCHOR), and the framing of an id's payload.",
 
   "$ref": "#/$defs/Query",
 
@@ -65,7 +65,7 @@
     "PathStep": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One bounded walk: follow the typed edges in direction dir and yield every claim reached at between min and max hops from the starting set, optionally constrained to nodes types. edges gates every hop; nodes gates the claims a step yields, never those it passes through. A min above a bounded max is refused by the implementation — a JSON Schema cannot compare two sibling values (R-QHOPS).",
+      "description": "One bounded walk: follow the typed edges in direction dir and yield every claim reached at between min and max hops from the starting set, optionally constrained to nodes types. edges gates every hop; nodes gates the claims a step yields, never those it passes through. A min above a bounded max is refused by the implementation — a JSON Schema cannot compare two sibling values (R-QSTEPS).",
       "properties": {
         "edges": {
           "type": "array",
@@ -96,7 +96,7 @@
     },
 
     "Where": {
-      "description": "A boolean tree. Each node is exactly one of the and / or / not combinators over sub-trees, or a leaf naming a field and its test. Within a where, or is boolean; across generators it unions whole result sets. A leaf may name any field a claim carries, including the derived height (R-HEIGHT-FIELD).",
+      "description": "A boolean tree. Each node is exactly one of the and / or / not combinators over sub-trees, or a leaf naming a field and its test. Within a where, or is boolean; across generators it unions whole result sets. A leaf may name any field a claim carries, height included (V-HEIGHT).",
       "oneOf": [
         {
           "type": "object",
@@ -139,7 +139,7 @@
             "field": {
               "type": "string",
               "minLength": 1,
-              "description": "The field tested — any field a claim carries, or the derived height."
+              "description": "The field tested — any field a claim carries, height included."
             },
             "test": { "$ref": "#/$defs/Comparison" }
           }
@@ -180,23 +180,23 @@
         "shape": {
           "type": "string",
           "enum": ["single", "path"],
-          "description": "single yields the reached endpoints, one element each; path yields routes, each running outward from the frontier claim its walk began at (R-QOUTPUT)."
+          "description": "single yields the reached endpoints, one element each; path yields routes, each running outward from the frontier claim its walk began at (R-QSHAPE)."
         },
         "detail": {
           "type": "string",
-          "enum": ["id", "graph", "claims"],
-          "description": "How much each element carries: id (the id, or the ids along a path), graph (nodes joined by the edges between them), or claims (the full claim for each node — the node with all its outgoing edges, so richer than graph) (R-QOUTPUT)."
+          "enum": ["id", "claims"],
+          "description": "What each element carries: id (the id alone) or claims (the claim in full). Under shape: path it applies to every claim in the route (R-QDETAIL)."
         },
         "form": {
           "type": "string",
           "enum": ["original", "materialized"],
-          "description": "Which field values a claim carries: original as written, a diff-overlaid claim's delta; materialized with any contribution/diff chain resolved over the predecessor it references, recursively to a base claim. A property of the values, hence orthogonal to detail and encoding (R-QOUTPUT)."
+          "description": "Which field values a claim carries: original as written, a diff-overlaid claim's delta; materialized with any contribution/diff chain resolved over the predecessor it references, recursively to a base claim. A property of the values, hence orthogonal to detail and encoding (R-QFORM)."
         },
         "content": { "$ref": "#/$defs/OutputContent" },
         "encoding": {
           "type": "string",
           "enum": ["json", "cbor"],
-          "description": "json is text with content base64-encoded, cbor is binary; the same information either way (R-QOUTPUT)."
+          "description": "json is text with content base64-encoded, cbor is binary; the same information either way (R-QENCODING)."
         }
       }
     },
@@ -205,17 +205,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["max", "overflow"],
-      "description": "Inline content per claim. Absent, no content is inlined and a claim carries only its content_hash (R-QOUTPUT).",
+      "description": "Inline content per claim. Absent, no content is inlined (R-QCONTENT).",
       "properties": {
         "max": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cap in bytes on the content inlined per claim."
+          "description": "Cap in bytes on the content inlined per claim; 0 inlines every claim's content in full."
         },
         "overflow": {
           "type": "string",
-          "enum": ["cutoff", "omit", "reference"],
-          "description": "What becomes of content past the cap: cutoff truncates, omit drops it, reference leaves a content_hash stub in its place."
+          "enum": ["cutoff", "omit"],
+          "description": "What becomes of content past the cap: cutoff truncates it, omit drops it. A claim keeps every field it carries either way."
         }
       }
     },
@@ -234,7 +234,7 @@
         "field": {
           "type": "string",
           "minLength": 1,
-          "description": "The field sorted on — any field a claim carries, or the derived height."
+          "description": "The field sorted on — any field a claim carries, height included."
         },
         "compare": {
           "type": "string",
@@ -279,7 +279,7 @@
         "report": {
           "type": "string",
           "enum": ["info", "debug", "trace"],
-          "description": "Report verbosity: info gives high-level stages, debug routing and lowering, trace per-claim detail. Set, and only then, the stream carries one final report record after the last element, typed distinctly from result claims (R-QREPORT)."
+          "description": "Report verbosity: info gives high-level stages, debug routing and translation, trace per-claim detail. Set, and only then, the stream carries one final report record after the last element, typed distinctly from result claims (R-QREPORT)."
         }
       }
     },
@@ -294,7 +294,7 @@
     "TypeGlob": {
       "type": "string",
       "minLength": 1,
-      "description": "A glob over class/sub, e.g. derivation/* or entity/person. A leading - excludes the type it names (R-QHOPS)."
+      "description": "A glob over class/sub, e.g. derivation/* or entity/person. A leading - excludes. Exclusion decides: a type matching an excluded pattern is refused whatever the included patterns say, and a list of exclusions alone admits every other type (R-QSTEPS)."
     },
 
     "Duration": {

@@ -7,9 +7,9 @@
 // ranke-go has no counterpart: it produces results and RankeDB frames them, while a
 // browser is the side that must consume a stream it cannot buffer whole.
 //
-// A record is not always a claim. Output.Detail and Output.Shape between them decide
-// what a record carries (ranke-go's ResultKind), so the reader reports the kind and a
-// caller switches once — as ranke-go's QueryResult has it.
+// Output.Detail and Output.Shape between them decide what a record carries — an id, a
+// route of ids, a claim (ranke-go's ResultKind) — so the reader reports the kind and a
+// caller switches once, as ranke-go's QueryResult has it.
 
 import type { Claim } from './claim.ts'
 import { RankeDecodeError, decodeClaim, type DecodeOptions } from './codec.ts'
@@ -43,12 +43,9 @@ export interface QueryEvent {
 }
 
 /**
- * ResultRecord is one record of a result run, tagged by what it carries. The kinds
- * follow ranke-go's ResultKind, which is the product of Output.Shape and
- * Output.Detail: an id, a route of ids, or a claim.
- *
- * A path of claims arrives as one record per claim (RankeDB writes each separately),
- * so `claim` covers both shapes and a caller reassembles a route by its own count.
+ * ResultRecord is one record of a result run, tagged by what it carries — the kinds of
+ * ranke-go's ResultKind. A path of CLAIMS arrives as one record per claim, so `claim`
+ * covers both shapes and a caller counts a route out for itself.
  */
 export type ResultRecord =
   | { readonly kind: 'claim'; readonly claim: Claim }
@@ -153,9 +150,8 @@ export function decodeResultRecord(
   return { kind: 'report', report: record as QueryReport }
 }
 
-// CBOR major types, read from a record's first byte to tell what it carries. Under
-// cbor framing every payload is CBOR, including the ones that are not claims, so the
-// same four kinds are discriminable as they are under json.
+// CBOR major types, read from a record's first byte to tell what it carries. Every
+// payload in a cbor sequence is CBOR, so the four kinds discriminate as under json.
 const MAJOR_TEXT = 3
 const MAJOR_ARRAY = 4
 const MAJOR_MAP = 5
