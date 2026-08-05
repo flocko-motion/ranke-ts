@@ -35,9 +35,7 @@ export type QueryErrorCode =
   | 'ErrQueryHops'
   | 'ErrQueryEnum'
   | 'ErrQueryOverflow'
-  // ranke-go refuses these while decoding, through DisallowUnknownFields and the
-  // decoder's own types, so neither mirrors a sentinel. A browser assembles a query
-  // from a form, a URL or stored state, where the type system is no longer present.
+  // ranke-go refuses these while decoding, so neither mirrors a sentinel.
   | 'ErrQueryUnknownField'
   | 'ErrQueryType'
 
@@ -69,9 +67,8 @@ const OVERFLOWS = ['cutoff', 'omit', 'reference'] as const
 
 const OPERATORS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in', 'glob'] as const
 
-// The keys each block admits. rql.schema.json states additionalProperties: false
-// throughout, and ranke-go decodes with DisallowUnknownFields, so an unrecognised key
-// is a refusal on both sides rather than something to ignore.
+// The keys each block admits: the schema says additionalProperties: false throughout,
+// and ranke-go decodes with DisallowUnknownFields.
 const KEYS = {
   query: ['select', 'where', 'output', 'order', 'limit', 'execution'],
   select: ['branch', 'head', 'claim', 'path'],
@@ -95,9 +92,8 @@ const KEYS = {
  * query assembled at run time — from a form, a URL, or stored state.
  */
 export function ValidateQuery(q: Query): void {
-  // Shape before meaning: a typo'd key or a number where a string belongs is not a
-  // value outside a set, and the type system is absent by the time a query arrives
-  // from a form, a URL or stored state.
+  // Shape before meaning: a query from a form, a URL or JSON.parse reaches here with
+  // no type checking behind it.
   checkObject('', q, KEYS.query)
   validateSelect(q)
   if (q.where !== undefined) validateWhere(q.where, 'where')
@@ -129,8 +125,7 @@ function checkString(field: string, v: unknown): void {
   }
 }
 
-// checkInt mirrors what Go's decoder admits for an int field: a whole number, and
-// nothing else. A fractional value is a different kind of wrong from a large one.
+// checkInt admits what Go's decoder admits for an int field: a whole number.
 function checkInt(field: string, v: unknown): void {
   if (v === undefined) return
   if (typeof v !== 'number' || !Number.isInteger(v)) {
@@ -151,8 +146,8 @@ function kindOf(v: unknown): string {
   return `${typeof v} ${JSON.stringify(v)}`
 }
 
-// checkTypeGlobs holds a type list to being a list of strings, which is where a bare
-// string slips through most easily: `edges: "a/*"` reads correctly and is not.
+// checkTypeGlobs is where a bare string slips through most easily: `edges: "a/*"`
+// reads correctly and is a string where a list belongs.
 function checkTypeGlobs(field: string, v: unknown): void {
   checkArray(field, v)
   if (v === undefined) return
@@ -218,9 +213,15 @@ function validateStep(step: PathStep, field: string): void {
   checkInt(`${field}.min`, step.min)
   checkInt(`${field}.max`, step.max)
   oneOf(`${field}.dir`, step.dir, DIRS)
-  // MinHops: absent means one hop, and a negative clamps to zero rather than being
-  // refused — ranke-go accepts min: -1, so this does too.
-  const min = step.min === undefined ? 1 : Math.max(step.min, 0)
+  // A hop count is bounded at zero. Zero itself is admissible: min 0 carries the
+  // starting set through, max 0 leaves the step unbounded.
+  if (step.min !== undefined && step.min < 0) {
+    throw new RankeQueryError('ErrQueryHops', `${field}.min`, `${step.min} is negative`)
+  }
+  if (step.max !== undefined && step.max < 0) {
+    throw new RankeQueryError('ErrQueryHops', `${field}.max`, `${step.max} is negative`)
+  }
+  const min = step.min ?? 1
   if (step.max !== undefined && step.max > 0 && min > step.max) {
     throw new RankeQueryError(
       'ErrQueryHops',
@@ -282,8 +283,7 @@ function validateComparison(c: Comparison, field: string): void {
     throw new RankeQueryError('ErrQueryType', field, `expected an object, got ${kindOf(c)}`)
   }
   const node = c as Record<string, unknown>
-  // An unrecognised operator leaves none applied, which is the same refusal ranke-go
-  // reaches, so the count carries it and no unknown-key check is needed here.
+  // An unrecognised operator leaves none applied, so the count already refuses it.
   const set = OPERATORS.filter((op) => node[op] !== undefined)
   if (set.length === 1 && set[0] === 'in') checkArray(`${field}.in`, node.in)
   if (set.length === 1 && set[0] === 'glob') checkString(`${field}.glob`, node.glob)

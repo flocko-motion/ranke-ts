@@ -20,8 +20,8 @@ import {
 // accept says nothing about what a reader lets through.
 //
 // Three cases turn on a signature, and this library holds no keys, so it cannot
-// decide them. They are named below rather than skipped by category: a case that
-// becomes undecidable for a new reason must fail this file, not slip past it.
+// decide them. Each is named below, so a case that becomes undecidable for a new
+// reason fails this file.
 const NEEDS_A_KEY = new Set([
   'claims/rejected-wrong-message.cbor',
   'claims/rejected-wrong-signer.cbor',

@@ -176,6 +176,8 @@ func main() {
 		{"edges as a bare string", `{"select":{"branch":"main","path":[{"edges":"a/*"}]}}`},
 		{"a branch that is not a string", `{"select":{"branch":123}}`},
 		{"a negative min", `{"select":{"branch":"main","path":[{"min":-1}]}}`},
+		{"a negative max", `{"select":{"branch":"main","path":[{"max":-1}]}}`},
+		{"min 0 carries the starting set through", `{"select":{"branch":"main","path":[{"min":0}]}}`},
 		{"a fractional results cap", `{"select":{"branch":"main"},"limit":{"results":1.5}}`},
 		{"order as an object rather than a list", `{"select":{"branch":"main"},"order":{"field":"a"}}`},
 		{"a path step that is not an object", `{"select":{"branch":"main","path":["derivation/*"]}}`},

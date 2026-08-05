@@ -29,13 +29,24 @@ const oracle: OracleFile = JSON.parse(
 // The table is generated from a list in tools/queryoracle, so its size is pinned
 // rather than floored: a floor would let cases be deleted without anything noticing,
 // and a case removed is coverage removed.
-const CASES = 55
-const REFUSALS = 35
+const CASES = 57
+const REFUSALS = 37
 
 test('the oracle comes from a released ranke-go and is whole', () => {
   assert.match(oracle.rankeGo, /^v\d+\.\d+\.\d+$/, 'a released version, not a substituted path')
   assert.equal(oracle.verdicts.length, CASES, 'update CASES when adding a case, deliberately')
   assert.equal(oracle.verdicts.filter((v) => !v.accepted).length, REFUSALS)
+
+  // ranke-go once clamped a negative min instead of refusing it, and this library
+  // inherited that. The case keeps the gap shut in both.
+  const negative = oracle.verdicts.find((v) => v.label === 'a negative min')
+  assert.ok(negative !== undefined, 'the negative-hops case is missing from the oracle')
+  assert.equal(
+    negative.accepted,
+    false,
+    `ranke-go ${oracle.rankeGo} accepts a negative min, so it predates the hops fix — ` +
+      'release ranke-go, bump tools/go.mod, and rerun scripts/fixtures.sh',
+  )
 })
 
 // Two rules ranke-go enforces when a read runs (archive.go validateSelect) rather
@@ -69,8 +80,8 @@ test('ValidateQuery agrees with ranke-go on every case', () => {
   assert.deepEqual(disagreements, [])
 })
 
-// The fold is deliberate, so it is asserted rather than merely tolerated: each
-// read-time rule must actually fire on the case that breaks it.
+// The fold is deliberate, so each read-time rule must actually fire on the case that
+// breaks it — which is what keeps the escape hatch above from widening.
 test('the read-time scan rules are caught before sending', () => {
   const scans: Array<[string, string]> = [
     ['{"select":{"branch":"main"},"output":{"shape":"path"}}', 'ErrQueryScanShape'],

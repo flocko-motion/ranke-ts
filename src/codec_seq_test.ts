@@ -78,8 +78,8 @@ test('a json sequence reads at every chunk size', () => {
   }
 })
 
-// A truncated result is not an empty one, so the reader must say so rather than
-// report the claims it did manage.
+// A stream cut mid-record is a failure, so end() raises one; the claims it managed
+// answer a different question than the one asked.
 test('a cbor stream cut mid-record fails at end', () => {
   const stream = cborStream()
   const r = newSeqReader('cbor')

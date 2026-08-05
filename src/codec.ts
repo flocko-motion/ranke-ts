@@ -24,7 +24,7 @@ import {
 } from './node_taxonomy.ts'
 import { CborReader, CborWriter, RankeCborError, encodeText, encodeUint } from './internal/cbor.ts'
 
-/** RankeDecodeError reports bytes that are not a claim. */
+/** RankeDecodeError reports bytes a claim cannot be read from. */
 export class RankeDecodeError extends Error {
   override readonly name: string = 'RankeDecodeError'
 }
