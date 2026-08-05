@@ -159,6 +159,7 @@ export function decodeResultRecord(
 const MAJOR_TEXT = 3
 const MAJOR_ARRAY = 4
 const MAJOR_MAP = 5
+const MAJOR_SIMPLE = 7
 
 function decodeCborRecord(raw: Uint8Array, opts: DecodeOptions): ResultRecord {
   if (raw.length === 0) throw new RankeDecodeError('an empty record carries nothing')
@@ -219,6 +220,10 @@ function readCborScalar(raw: Uint8Array): unknown {
         ? Number(v)
         : v
     }
+    // A report states whether a limit cut the read short, so it carries a boolean —
+    // the one place in a sequence major type 7 appears.
+    case MAJOR_SIMPLE:
+      return r.readSimple()
     default:
       // An event list or an attrs map: handed back as bytes, since a diagnostic's
       // shape is the server's and a reader that needs it can decode further.

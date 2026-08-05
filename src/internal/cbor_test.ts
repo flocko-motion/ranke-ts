@@ -231,12 +231,43 @@ test('the reader refuses indefinite lengths, tags and floats', () => {
     'bf', // indefinite map
     'c0', // tag
     'f9', // half float
+    'fa', // single float
     'fb', // double
-    'f5', // true
+    'f7', // undefined
+    'f8ff', // a simple value beyond the three admitted
     '1c', // reserved additional information
   ]) {
     assert.throws(() => new CborReader(bin(s)).skipValue(), RankeCborError, s)
   }
+})
+
+// A claim record uses no major type 7, and a result sequence also carries an execution
+// report — which states whether a limit cut the read short, so it holds a boolean.
+// Exactly false, true and null are admitted; every float above still is not.
+test('the reader admits false, true and null, and nothing else of major type 7', () => {
+  for (const [encoded, want] of [
+    ['f4', false],
+    ['f5', true],
+    ['f6', null],
+  ] as const) {
+    const r = new CborReader(bin(encoded))
+    assert.equal(r.readSimple(), want, encoded)
+    r.expectEnd()
+  }
+
+  // skipValue must step over one too, since a report is read key by key.
+  const w = new CborWriter()
+  w.writeSortedMap([[encodeText('truncated'), bin('f4')]])
+  const r = new CborReader(w.bytes())
+  assert.equal(r.readMapHeader(), 1)
+  assert.equal(r.readText(), 'truncated')
+  assert.equal(hex(r.skipValue()), 'f4')
+  r.expectEnd()
+})
+
+test('readSimple refuses a value that is not one', () => {
+  assert.throws(() => new CborReader(bin('01')).readSimple(), RankeCborError)
+  assert.throws(() => new CborReader(bin('63616263')).readSimple(), RankeCborError)
 })
 
 test('the reader refuses trailing bytes', () => {
