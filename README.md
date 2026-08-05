@@ -241,6 +241,18 @@ Node can strip: no `enum`, no `namespace`, no parameter properties. String
 unions stand in for enums, which also keeps the emitted values identical to
 ranke-go's constants.
 
+`make bench` prints a performance baseline: microseconds per claim for a build
+broken down by stage, and bytes and peak RSS for a decode. It asserts nothing and
+stays out of `verify`, since a host that swings by a quarter between two runs of one
+build would fail a timing assertion at random. Each run names the ranke-go release it
+was measured against and prints the figures recorded before the performance work
+beside its own, so it says which way the numbers went.
+
+```sh
+make bench                              # 20000 iterations over 5000 claims
+make bench ITERATIONS=2000 CLAIMS=1000  # a quicker look
+```
+
 Two steps need a toolchain beyond npm, so both are deliberate rather than part of
 `verify`:
 

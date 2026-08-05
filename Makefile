@@ -3,7 +3,7 @@
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
 .PHONY: all install test typecheck build clean testdata-clean verify release fixtures \
-	generate pull-rql-schema check-generated docs docs-clean \
+	bench generate pull-rql-schema check-generated docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -27,6 +27,15 @@ test:
 # is a deliberate step rather than part of `verify`.
 fixtures:
 	@./scripts/fixtures.sh
+
+# Print a performance baseline: us per claim for a build with its stages, and bytes and
+# peak RSS for a decode. A record to re-run and compare by hand, so it asserts nothing and
+# stays out of `verify`, where a host that swings would fail a timing assertion at random.
+# Usage: make bench [ITERATIONS=20000] [CLAIMS=5000]
+ITERATIONS ?= 20000
+CLAIMS     ?= 5000
+bench:
+	@./scripts/bench.sh $(ITERATIONS) $(CLAIMS)
 
 # Take ranke-graph's released RQL schema, then regenerate the Query type from it.
 # Both are deliberate: the schema is committed so the build stays offline, and taking
