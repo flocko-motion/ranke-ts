@@ -35,6 +35,11 @@ export type QueryErrorCode =
   | 'ErrQueryHops'
   | 'ErrQueryEnum'
   | 'ErrQueryOverflow'
+  // ranke-go refuses these while decoding, through DisallowUnknownFields and the
+  // decoder's own types, so neither mirrors a sentinel. A browser assembles a query
+  // from a form, a URL or stored state, where the type system is no longer present.
+  | 'ErrQueryUnknownField'
+  | 'ErrQueryType'
 
 /** RankeQueryError reports a query that would be refused. */
 export class RankeQueryError extends Error {
@@ -64,6 +69,24 @@ const OVERFLOWS = ['cutoff', 'omit', 'reference'] as const
 
 const OPERATORS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in', 'glob'] as const
 
+// The keys each block admits. rql.schema.json states additionalProperties: false
+// throughout, and ranke-go decodes with DisallowUnknownFields, so an unrecognised key
+// is a refusal on both sides rather than something to ignore.
+const KEYS = {
+  query: ['select', 'where', 'output', 'order', 'limit', 'execution'],
+  select: ['branch', 'head', 'claim', 'path'],
+  pathStep: ['edges', 'dir', 'min', 'max', 'nodes'],
+  output: ['shape', 'detail', 'form', 'content', 'encoding'],
+  content: ['max', 'overflow'],
+  orderKey: ['field', 'compare', 'dir'],
+  limit: ['results', 'time'],
+  execution: ['layer', 'report'],
+  whereAnd: ['and'],
+  whereOr: ['or'],
+  whereNot: ['not'],
+  whereLeaf: ['field', 'test'],
+} as const
+
 /**
  * ValidateQuery holds a query to the schema's rules plus the three it cannot state:
  * a step's min against its max (R-QHOPS), and what a scan may ask for.
@@ -72,6 +95,10 @@ const OPERATORS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in', 'glob'] as const
  * query assembled at run time — from a form, a URL, or stored state.
  */
 export function ValidateQuery(q: Query): void {
+  // Shape before meaning: a typo'd key or a number where a string belongs is not a
+  // value outside a set, and the type system is absent by the time a query arrives
+  // from a form, a URL or stored state.
+  checkObject('', q, KEYS.query)
   validateSelect(q)
   if (q.where !== undefined) validateWhere(q.where, 'where')
   if (q.output !== undefined) validateOutput(q.output)
@@ -80,11 +107,73 @@ export function ValidateQuery(q: Query): void {
   if (q.execution !== undefined) validateExecution(q.execution)
 }
 
+// checkObject holds a block to being an object carrying only the keys it admits.
+function checkObject(field: string, v: unknown, keys: readonly string[]): void {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    throw new RankeQueryError('ErrQueryType', field === '' ? 'query' : field, `expected an object, got ${kindOf(v)}`)
+  }
+  for (const key of Object.keys(v)) {
+    if (!keys.includes(key)) {
+      throw new RankeQueryError(
+        'ErrQueryUnknownField',
+        field === '' ? key : `${field}.${key}`,
+        `unknown key; this block admits ${keys.join(', ')}`,
+      )
+    }
+  }
+}
+
+function checkString(field: string, v: unknown): void {
+  if (v !== undefined && typeof v !== 'string') {
+    throw new RankeQueryError('ErrQueryType', field, `expected a string, got ${kindOf(v)}`)
+  }
+}
+
+// checkInt mirrors what Go's decoder admits for an int field: a whole number, and
+// nothing else. A fractional value is a different kind of wrong from a large one.
+function checkInt(field: string, v: unknown): void {
+  if (v === undefined) return
+  if (typeof v !== 'number' || !Number.isInteger(v)) {
+    throw new RankeQueryError('ErrQueryType', field, `expected a whole number, got ${kindOf(v)}`)
+  }
+}
+
+function checkArray(field: string, v: unknown): void {
+  if (v !== undefined && !Array.isArray(v)) {
+    throw new RankeQueryError('ErrQueryType', field, `expected a list, got ${kindOf(v)}`)
+  }
+}
+
+function kindOf(v: unknown): string {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'a list'
+  if (typeof v === 'object') return 'an object'
+  return `${typeof v} ${JSON.stringify(v)}`
+}
+
+// checkTypeGlobs holds a type list to being a list of strings, which is where a bare
+// string slips through most easily: `edges: "a/*"` reads correctly and is not.
+function checkTypeGlobs(field: string, v: unknown): void {
+  checkArray(field, v)
+  if (v === undefined) return
+  for (const [i, entry] of (v as unknown[]).entries()) {
+    checkString(`${field}[${i}]`, entry)
+  }
+}
+
 // validateSelect checks the generator, including the two rules ranke-go enforces at
 // read time in archive.go: a scan reaches claims by no stated route.
 function validateSelect(q: Query): void {
   const sel: Select | undefined = q.select
-  if (sel === undefined || sel.branch === undefined || sel.branch === '') {
+  if (sel === undefined) {
+    throw new RankeQueryError('ErrQueryNoScope', 'select.branch', 'a scope is mandatory')
+  }
+  checkObject('select', sel, KEYS.select)
+  checkString('select.branch', sel.branch)
+  checkString('select.head', sel.head)
+  checkString('select.claim', sel.claim)
+  checkArray('select.path', sel.path)
+  if (sel.branch === undefined || sel.branch === '') {
     throw new RankeQueryError('ErrQueryNoScope', 'select.branch', 'a scope is mandatory')
   }
   if (sel.branch === '$universe' && sel.head === undefined) {
@@ -122,8 +211,16 @@ function validateSelect(q: Query): void {
 // validateStep checks dir and hops. A max of 0 is unbounded, so only a bounded max
 // can sit under min.
 function validateStep(step: PathStep, field: string): void {
+  checkObject(field, step, KEYS.pathStep)
+  checkTypeGlobs(`${field}.edges`, step.edges)
+  checkTypeGlobs(`${field}.nodes`, step.nodes)
+  checkString(`${field}.dir`, step.dir)
+  checkInt(`${field}.min`, step.min)
+  checkInt(`${field}.max`, step.max)
   oneOf(`${field}.dir`, step.dir, DIRS)
-  const min = step.min ?? 1
+  // MinHops: absent means one hop, and a negative clamps to zero rather than being
+  // refused — ranke-go accepts min: -1, so this does too.
+  const min = step.min === undefined ? 1 : Math.max(step.min, 0)
   if (step.max !== undefined && step.max > 0 && min > step.max) {
     throw new RankeQueryError(
       'ErrQueryHops',
@@ -136,6 +233,9 @@ function validateStep(step: PathStep, field: string): void {
 // validateWhere holds every node of the tree to exactly one form. The union expresses
 // that in the type; a value from outside the type system still has to be checked.
 function validateWhere(w: Where, field: string): void {
+  if (typeof w !== 'object' || w === null || Array.isArray(w)) {
+    throw new RankeQueryError('ErrQueryType', field, `expected an object, got ${kindOf(w)}`)
+  }
   const node = w as Record<string, unknown>
   const forms = ['and', 'or', 'not'].filter((k) => node[k] !== undefined)
   const leaf = node.field !== undefined || node.test !== undefined
@@ -147,6 +247,7 @@ function validateWhere(w: Where, field: string): void {
     )
   }
   if (leaf) {
+    checkObject(field, node, KEYS.whereLeaf)
     if (node.field === undefined || node.test === undefined) {
       throw new RankeQueryError(
         'ErrQueryWhereForm',
@@ -154,23 +255,38 @@ function validateWhere(w: Where, field: string): void {
         'a leaf carries both a field and a test',
       )
     }
+    checkString(`${field}.field`, node.field)
     validateComparison(node.test as Comparison, `${field}.test`)
     return
   }
-  if (Array.isArray(node.and)) {
-    node.and.forEach((sub, i) => validateWhere(sub as Where, `${field}.and[${i}]`))
+  if (node.and !== undefined) {
+    checkObject(field, node, KEYS.whereAnd)
+    checkArray(`${field}.and`, node.and)
+    ;(node.and as unknown[]).forEach((sub, i) => validateWhere(sub as Where, `${field}.and[${i}]`))
   }
-  if (Array.isArray(node.or)) {
-    node.or.forEach((sub, i) => validateWhere(sub as Where, `${field}.or[${i}]`))
+  if (node.or !== undefined) {
+    checkObject(field, node, KEYS.whereOr)
+    checkArray(`${field}.or`, node.or)
+    ;(node.or as unknown[]).forEach((sub, i) => validateWhere(sub as Where, `${field}.or[${i}]`))
   }
-  if (node.not !== undefined) validateWhere(node.not as Where, `${field}.not`)
+  if (node.not !== undefined) {
+    checkObject(field, node, KEYS.whereNot)
+    validateWhere(node.not as Where, `${field}.not`)
+  }
 }
 
 // validateComparison holds a comparison to one operator. An explicit empty `in` set
 // counts, being present.
 function validateComparison(c: Comparison, field: string): void {
+  if (typeof c !== 'object' || c === null || Array.isArray(c)) {
+    throw new RankeQueryError('ErrQueryType', field, `expected an object, got ${kindOf(c)}`)
+  }
   const node = c as Record<string, unknown>
+  // An unrecognised operator leaves none applied, which is the same refusal ranke-go
+  // reaches, so the count carries it and no unknown-key check is needed here.
   const set = OPERATORS.filter((op) => node[op] !== undefined)
+  if (set.length === 1 && set[0] === 'in') checkArray(`${field}.in`, node.in)
+  if (set.length === 1 && set[0] === 'glob') checkString(`${field}.glob`, node.glob)
   if (set.length !== 1) {
     throw new RankeQueryError(
       'ErrQueryComparisonForm',
@@ -181,11 +297,18 @@ function validateComparison(c: Comparison, field: string): void {
 }
 
 function validateOutput(o: Output): void {
+  checkObject('output', o, KEYS.output)
+  for (const axis of ['shape', 'detail', 'form', 'encoding'] as const) {
+    checkString(`output.${axis}`, o[axis])
+  }
   oneOf('output.shape', o.shape, SHAPES)
   oneOf('output.detail', o.detail, DETAILS)
   oneOf('output.form', o.form, FORMS)
   oneOf('output.encoding', o.encoding, ENCODINGS)
   if (o.content === undefined) return
+  checkObject('output.content', o.content, KEYS.content)
+  checkInt('output.content.max', o.content.max)
+  checkString('output.content.overflow', o.content.overflow)
   if (o.content.overflow === undefined) {
     throw new RankeQueryError(
       'ErrQueryOverflow',
@@ -204,7 +327,12 @@ function validateOutput(o: Output): void {
 }
 
 function validateOrder(order: Order): void {
+  checkArray('order', order)
   order.forEach((key, i) => {
+    checkObject(`order[${i}]`, key, KEYS.orderKey)
+    checkString(`order[${i}].field`, key.field)
+    checkString(`order[${i}].compare`, key.compare)
+    checkString(`order[${i}].dir`, key.dir)
     if (key.field === undefined || key.field === '') {
       throw new RankeQueryError('ErrQueryEnum', `order[${i}].field`, 'a sort key names a field')
     }
@@ -214,6 +342,9 @@ function validateOrder(order: Order): void {
 }
 
 function validateLimit(limit: Limit): void {
+  checkObject('limit', limit, KEYS.limit)
+  checkInt('limit.results', limit.results)
+  checkString('limit.time', limit.time)
   if (limit.results !== undefined && limit.results < 0) {
     throw new RankeQueryError('ErrQueryEnum', 'limit.results', 'a cap is non-negative')
   }
@@ -227,6 +358,9 @@ function validateLimit(limit: Limit): void {
 }
 
 function validateExecution(exec: Execution): void {
+  checkObject('execution', exec, KEYS.execution)
+  checkString('execution.layer', exec.layer)
+  checkString('execution.report', exec.report)
   oneOf('execution.report', exec.report, REPORTS)
 }
 

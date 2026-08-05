@@ -26,9 +26,16 @@ const oracle: OracleFile = JSON.parse(
   readFileSync(new URL('./testing/query_oracle.json', import.meta.url), 'utf8'),
 )
 
-test('the oracle comes from a released ranke-go', () => {
+// The table is generated from a list in tools/queryoracle, so its size is pinned
+// rather than floored: a floor would let cases be deleted without anything noticing,
+// and a case removed is coverage removed.
+const CASES = 55
+const REFUSALS = 35
+
+test('the oracle comes from a released ranke-go and is whole', () => {
   assert.match(oracle.rankeGo, /^v\d+\.\d+\.\d+$/, 'a released version, not a substituted path')
-  assert.ok(oracle.verdicts.length >= 40, `expected the full table, got ${oracle.verdicts.length}`)
+  assert.equal(oracle.verdicts.length, CASES, 'update CASES when adding a case, deliberately')
+  assert.equal(oracle.verdicts.filter((v) => !v.accepted).length, REFUSALS)
 })
 
 // Two rules ranke-go enforces when a read runs (archive.go validateSelect) rather

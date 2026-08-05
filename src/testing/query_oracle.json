@@ -695,6 +695,169 @@
       },
       "accepted": false,
       "detail": "ranke.DecodeQuery: select.head: ranke.Id: multibase decode: selected encoding not supported"
+    },
+    {
+      "label": "an unknown key at the top level",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "selct": {
+          "branch": "x"
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: unknown field \"selct\""
+    },
+    {
+      "label": "an unknown key inside select",
+      "query": {
+        "select": {
+          "branch": "main",
+          "hed": "abc"
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: unknown field \"hed\""
+    },
+    {
+      "label": "an unknown key inside a path step",
+      "query": {
+        "select": {
+          "branch": "main",
+          "path": [
+            {
+              "edges": [
+                "a/*"
+              ],
+              "hops": 3
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: unknown field \"hops\""
+    },
+    {
+      "label": "an unknown key inside output",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "output": {
+          "shap": "single"
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: unknown field \"shap\""
+    },
+    {
+      "label": "an unknown key inside a comparison",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "where": {
+          "field": "a",
+          "test": {
+            "equals": 1
+          }
+        }
+      },
+      "accepted": false,
+      "code": "ErrQueryComparisonForm",
+      "detail": "ranke.Query: a comparison applies exactly one operator (eq | ne | lt | le | gt | ge | in | glob): \"equals\""
+    },
+    {
+      "label": "results as a string",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "limit": {
+          "results": "5"
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal string into Go struct field wireLimit.limit.results of type int"
+    },
+    {
+      "label": "edges as a bare string",
+      "query": {
+        "select": {
+          "branch": "main",
+          "path": [
+            {
+              "edges": "a/*"
+            }
+          ]
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal string into Go struct field wirePathStep.select.path.edges of type []string"
+    },
+    {
+      "label": "a branch that is not a string",
+      "query": {
+        "select": {
+          "branch": 123
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal number into Go struct field wireSelect.select.branch of type string"
+    },
+    {
+      "label": "a negative min",
+      "query": {
+        "select": {
+          "branch": "main",
+          "path": [
+            {
+              "min": -1
+            }
+          ]
+        }
+      },
+      "accepted": true
+    },
+    {
+      "label": "a fractional results cap",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "limit": {
+          "results": 1.5
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal number 1.5 into Go struct field wireLimit.limit.results of type int"
+    },
+    {
+      "label": "order as an object rather than a list",
+      "query": {
+        "select": {
+          "branch": "main"
+        },
+        "order": {
+          "field": "a"
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal object into Go struct field wireQuery.order of type []ranke.wireOrderKey"
+    },
+    {
+      "label": "a path step that is not an object",
+      "query": {
+        "select": {
+          "branch": "main",
+          "path": [
+            "derivation/*"
+          ]
+        }
+      },
+      "accepted": false,
+      "detail": "ranke.DecodeQuery: json: cannot unmarshal string into Go struct field wireSelect.select.path of type ranke.wirePathStep"
     }
   ]
 }

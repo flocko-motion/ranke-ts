@@ -106,6 +106,18 @@ and a `RankeQueryError` carries the `code` of the rule broken — `ErrQueryHops`
 rules ranke-go enforces when a read runs; catching them here saves the round trip
 the server would spend refusing.
 
+It checks shape as well as meaning. TypeScript's excess-property check fires only
+on an object literal in a typed slot, so a query from `JSON.parse`, a URL
+parameter or a form arrives unchecked — and a plain-JavaScript caller has no
+checking at all. An unrecognised key or a value of the wrong kind is therefore a
+refusal here, matching what ranke-go's decoder rejects, and the error names the
+path:
+
+```
+ErrQueryUnknownField  select.path[0].hops: unknown key; this block admits edges, dir, min, max, nodes
+ErrQueryType          limit.results: expected a whole number, got string "5"
+```
+
 Three values exist on ranke-go's side and not on the wire: `output.encoding`
 `native`, and `execution.report` `error` and `warn`. The schema excludes all
 three, so the generated type refuses them without a rule of its own.

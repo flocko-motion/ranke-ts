@@ -157,6 +157,28 @@ func main() {
 			`{"select":{"branch":"main","claim":"bciqlu6awx6hqdt7kifaubxs5vyrchmadmgrzmf32ts2bb73b6iablli"}}`,
 		},
 		{"an id that is not multibase base32", `{"select":{"branch":"$universe","head":"NOT-AN-ID"}}`},
+
+		// --- refused while decoding: shape rather than value ---
+		//
+		// ranke-go refuses these through DisallowUnknownFields and the decoder's own
+		// types, so they carry no sentinel. A validator that only checks enums, forms
+		// and bounds accepts every one of them, which is the asymmetry these cases
+		// exist to expose: a typo'd key would reach the wire and come back a 400.
+		{"an unknown key at the top level", `{"select":{"branch":"main"},"selct":{"branch":"x"}}`},
+		{"an unknown key inside select", `{"select":{"branch":"main","hed":"abc"}}`},
+		{
+			"an unknown key inside a path step",
+			`{"select":{"branch":"main","path":[{"edges":["a/*"],"hops":3}]}}`,
+		},
+		{"an unknown key inside output", `{"select":{"branch":"main"},"output":{"shap":"single"}}`},
+		{"an unknown key inside a comparison", `{"select":{"branch":"main"},"where":{"field":"a","test":{"equals":1}}}`},
+		{"results as a string", `{"select":{"branch":"main"},"limit":{"results":"5"}}`},
+		{"edges as a bare string", `{"select":{"branch":"main","path":[{"edges":"a/*"}]}}`},
+		{"a branch that is not a string", `{"select":{"branch":123}}`},
+		{"a negative min", `{"select":{"branch":"main","path":[{"min":-1}]}}`},
+		{"a fractional results cap", `{"select":{"branch":"main"},"limit":{"results":1.5}}`},
+		{"order as an object rather than a list", `{"select":{"branch":"main"},"order":{"field":"a"}}`},
+		{"a path step that is not an object", `{"select":{"branch":"main","path":["derivation/*"]}}`},
 	}
 
 	out := struct {
