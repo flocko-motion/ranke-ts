@@ -34,6 +34,9 @@ export type QueryErrorCode =
   | 'ErrQueryComparisonForm'
   | 'ErrQueryHops'
   | 'ErrQueryEnum'
+  // A bound and an enumeration fail differently, and a caller switching on the code
+  // reads ErrQueryEnum as a mistyped string.
+  | 'ErrQueryBounds'
   | 'ErrQueryOverflow'
   // ranke-go refuses these while decoding, so neither mirrors a sentinel.
   | 'ErrQueryUnknownField'
@@ -42,14 +45,27 @@ export type QueryErrorCode =
 /** RankeQueryError reports a query that would be refused. */
 export class RankeQueryError extends Error {
   override readonly name: string = 'RankeQueryError'
+  /** The rule broken, which is what an error message names. */
   readonly code: QueryErrorCode
+  /**
+   * Every rule this refusal answers to, `code` first. A condition two rules both
+   * name carries both, so a caller watching one need not know the other — the
+   * counterpart of ranke-go's errors.Is matching two sentinels.
+   */
+  readonly codes: readonly QueryErrorCode[]
   /** The field the rule applies to, in the wire's dotted form. */
   readonly field: string
 
-  constructor(code: QueryErrorCode, field: string, detail: string) {
+  constructor(code: QueryErrorCode, field: string, detail: string, ...also: QueryErrorCode[]) {
     super(`${field}: ${detail}`)
     this.code = code
+    this.codes = [code, ...also]
     this.field = field
+  }
+
+  /** is reports whether this refusal answers to a rule, as errors.Is does. */
+  is(code: QueryErrorCode): boolean {
+    return this.codes.includes(code)
   }
 }
 
@@ -214,14 +230,26 @@ function validateStep(step: PathStep, field: string): void {
   checkInt(`${field}.max`, step.max)
   oneOf(`${field}.dir`, step.dir, DIRS)
   // A hop count is bounded at zero. Zero itself is admissible: min 0 carries the
-  // starting set through, max 0 leaves the step unbounded.
+  // starting set through, max 0 leaves the step unbounded. A negative breaks that
+  // bound as well as the step rule, so it answers to either.
   if (step.min !== undefined && step.min < 0) {
-    throw new RankeQueryError('ErrQueryHops', `${field}.min`, `${step.min} is negative`)
+    throw new RankeQueryError(
+      'ErrQueryHops',
+      `${field}.min`,
+      `${step.min} is negative`,
+      'ErrQueryBounds',
+    )
   }
   if (step.max !== undefined && step.max < 0) {
-    throw new RankeQueryError('ErrQueryHops', `${field}.max`, `${step.max} is negative`)
+    throw new RankeQueryError(
+      'ErrQueryHops',
+      `${field}.max`,
+      `${step.max} is negative`,
+      'ErrQueryBounds',
+    )
   }
   const min = step.min ?? 1
+  // A floor above a bounded ceiling breaks no bound, so it stays the step rule alone.
   if (step.max !== undefined && step.max > 0 && min > step.max) {
     throw new RankeQueryError(
       'ErrQueryHops',
@@ -317,12 +345,9 @@ function validateOutput(o: Output): void {
     )
   }
   oneOf('output.content.overflow', o.content.overflow, OVERFLOWS)
+  // A byte cap is a count, which the schema bounds at zero.
   if (o.content.max === undefined || o.content.max < 0) {
-    throw new RankeQueryError(
-      'ErrQueryEnum',
-      'output.content.max',
-      'a byte cap is a non-negative integer',
-    )
+    throw new RankeQueryError('ErrQueryBounds', 'output.content.max', 'a byte cap is non-negative')
   }
 }
 
@@ -345,14 +370,25 @@ function validateLimit(limit: Limit): void {
   checkObject('limit', limit, KEYS.limit)
   checkInt('limit.results', limit.results)
   checkString('limit.time', limit.time)
+  // A cap is a count, which the schema bounds at zero. Zero is the unbounded read.
   if (limit.results !== undefined && limit.results < 0) {
-    throw new RankeQueryError('ErrQueryEnum', 'limit.results', 'a cap is non-negative')
+    throw new RankeQueryError('ErrQueryBounds', 'limit.results', 'a cap is non-negative')
   }
-  if (limit.time !== undefined && !DURATION.test(limit.time)) {
+  if (limit.time === undefined) return
+  // The grammar admits a sign, which the schema's pattern omits and Go's ParseDuration
+  // takes — so a negative budget parses and then fails the bound, as it does upstream.
+  if (!SIGNED_DURATION.test(limit.time)) {
     throw new RankeQueryError(
       'ErrQueryEnum',
       'limit.time',
       `a duration is a decimal sequence with unit suffixes (ns, us, ms, s, m, h), or a bare 0 — got ${JSON.stringify(limit.time)}`,
+    )
+  }
+  if (limit.time.startsWith('-') && !ZERO_DURATION.test(limit.time)) {
+    throw new RankeQueryError(
+      'ErrQueryBounds',
+      'limit.time',
+      `a budget is non-negative — got ${JSON.stringify(limit.time)}`,
     )
   }
 }
@@ -364,9 +400,11 @@ function validateExecution(exec: Execution): void {
   oneOf('execution.report', exec.report, REPORTS)
 }
 
-// The duration grammar the schema fixes: "5s", "1m30s", or a bare "0" for unbounded.
-// Go's ParseDuration also accepts a leading sign, which the schema refuses.
-const DURATION = /^(0|([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+)$/
+// The duration grammar the schema fixes — "5s", "1m30s", or a bare "0" — widened by
+// the sign Go's ParseDuration takes, so what parses upstream parses here.
+const SIGNED_DURATION = /^[+-]?(0|([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+)$/
+// Zero however it is spelled: "-0s" is zero, so it clears the bound.
+const ZERO_DURATION = /^[+-]?(0|(0+(\.0+)?(ns|us|ms|s|m|h))+)$/
 
 // The multibase framing the schema fixes. Whether the payload's own framing parses is
 // parseId's answer, and needs the bytes.
