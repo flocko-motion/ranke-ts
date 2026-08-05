@@ -4,13 +4,12 @@
 // built with, and a reader that refuses anything non-canonical
 // limits:  the byte level only; which record fields exist is codec.ts's
 //
-// ranke-go takes this from fxamacker/cbor in CoreDetEncOptions mode, so no Go file
-// corresponds. Hand-rolled here for two reasons: the reader must hand back the raw
-// byte range of a value, since ids are computed over stored bytes and never over a
-// re-encode; and a permissive decoder would silently accept a non-canonical claim,
-// which for a content-addressed record is a defect rather than leniency.
+// ranke-go takes this from fxamacker/cbor, so no Go file corresponds. Hand-rolled for
+// two reasons: the reader hands back a value's raw byte range, since an id is computed
+// over stored bytes and never a re-encode; and a permissive decoder would accept a
+// non-canonical claim, which for a content-addressed record is a defect.
 
-/** RankeCborError reports bytes that are not canonical CBOR. */
+/** RankeCborError reports bytes lying outside canonical CBOR. */
 export class RankeCborError extends Error {
   override readonly name: string = 'RankeCborError'
 }
@@ -30,6 +29,13 @@ const MT_BYTES = 2
 const MT_TEXT = 3
 const MT_ARRAY = 4
 const MT_MAP = 5
+// Major 7 holds simple values and floats. A claim record uses none of it, but a
+// result sequence also carries an execution report, and a report has booleans — so
+// exactly false, true and null are admitted and every float is refused.
+const MT_SIMPLE = 7
+const SIMPLE_FALSE = 20
+const SIMPLE_TRUE = 21
+const SIMPLE_NULL = 22
 
 /** CborInt is how an integer crosses this boundary: uint64 exceeds a JS number. */
 export type CborInt = bigint
@@ -268,11 +274,23 @@ export class CborReader {
     return this.#b.subarray(start, this.#pos)
   }
 
+  /** readSimple reads false, true or null. */
+  readSimple(): boolean | null {
+    const { major, arg } = this.#head()
+    if (major !== MT_SIMPLE) {
+      throw new RankeCborError(`expected false, true or null, got major type ${major}`)
+    }
+    if (arg === BigInt(SIMPLE_FALSE)) return false
+    if (arg === BigInt(SIMPLE_TRUE)) return true
+    return null
+  }
+
   #skip(): void {
     const { major, arg } = this.#head()
     switch (major) {
       case MT_UINT:
       case MT_NEGINT:
+      case MT_SIMPLE:
         return
       case MT_BYTES:
       case MT_TEXT:
@@ -299,6 +317,14 @@ export class CborReader {
     const ib = this.#b[this.#pos++]!
     const major = ib >> 5
     const ai = ib & 0x1f
+    if (major === MT_SIMPLE) {
+      if (ai !== SIMPLE_FALSE && ai !== SIMPLE_TRUE && ai !== SIMPLE_NULL) {
+        throw new RankeCborError(
+          `major type 7 carries only false, true and null here, got additional information ${ai}`,
+        )
+      }
+      return { major, arg: BigInt(ai) }
+    }
     if (major > MT_MAP) {
       throw new RankeCborError(`major type ${major} has no place in a ranke record`)
     }

@@ -33,11 +33,11 @@ export type Select = {
   path?: PathStep[];
 };
 /**
- * A glob over class/sub, e.g. derivation/* or entity/person. A leading - excludes the type it names (R-QHOPS).
+ * A glob over class/sub, e.g. derivation/* or entity/person. A leading - excludes. Exclusion decides: a type matching an excluded pattern is refused whatever the included patterns say, and a list of exclusions alone admits every other type (R-QSTEPS).
  */
 export type TypeGlob = string;
 /**
- * A boolean tree. Each node is exactly one of the and / or / not combinators over sub-trees, or a leaf naming a field and its test. Within a where, or is boolean; across generators it unions whole result sets. A leaf may name any field a claim carries, including the derived height (R-HEIGHT-FIELD).
+ * A boolean tree. Each node is exactly one of the and / or / not combinators over sub-trees, or a leaf naming a field and its test. Within a where, or is boolean; across generators it unions whole result sets. A leaf may name any field a claim carries, height included (V-HEIGHT).
  */
 export type Where =
   | {
@@ -57,7 +57,7 @@ export type Where =
     }
   | {
       /**
-       * The field tested — any field a claim carries, or the derived height.
+       * The field tested — any field a claim carries, height included.
        */
       field: string;
       test: Comparison;
@@ -83,7 +83,7 @@ export interface Query {
   execution?: Execution;
 }
 /**
- * One bounded walk: follow the typed edges in direction dir and yield every claim reached at between min and max hops from the starting set, optionally constrained to nodes types. edges gates every hop; nodes gates the claims a step yields, never those it passes through. A min above a bounded max is refused by the implementation — a JSON Schema cannot compare two sibling values (R-QHOPS).
+ * One bounded walk: follow the typed edges in direction dir and yield every claim reached at between min and max hops from the starting set, optionally constrained to nodes types. edges gates every hop; nodes gates the claims a step yields, never those it passes through. A min above a bounded max is refused by the implementation — a JSON Schema cannot compare two sibling values (R-QSTEPS).
  */
 export interface PathStep {
   /**
@@ -131,39 +131,39 @@ export interface Comparison {
  */
 export interface Output {
   /**
-   * single yields the reached endpoints, one element each; path yields routes, each running outward from the frontier claim its walk began at (R-QOUTPUT).
+   * single yields the reached endpoints, one element each; path yields routes, each running outward from the frontier claim its walk began at (R-QSHAPE).
    */
   shape?: "single" | "path";
   /**
-   * How much each element carries: id (the id, or the ids along a path), graph (nodes joined by the edges between them), or claims (the full claim for each node — the node with all its outgoing edges, so richer than graph) (R-QOUTPUT).
+   * What each element carries: id (the id alone) or claims (the claim in full). Under shape: path it applies to every claim in the route (R-QDETAIL).
    */
-  detail?: "id" | "graph" | "claims";
+  detail?: "id" | "claims";
   /**
-   * Which field values a claim carries: original as written, a diff-overlaid claim's delta; materialized with any contribution/diff chain resolved over the predecessor it references, recursively to a base claim. A property of the values, hence orthogonal to detail and encoding (R-QOUTPUT).
+   * Which field values a claim carries: original as written, a diff-overlaid claim's delta; materialized with any contribution/diff chain resolved over the predecessor it references, recursively to a base claim. A property of the values, hence orthogonal to detail and encoding (R-QFORM).
    */
   form?: "original" | "materialized";
   content?: OutputContent;
   /**
-   * json is text with content base64-encoded, cbor is binary; the same information either way (R-QOUTPUT).
+   * json is text with content base64-encoded, cbor is binary; the same information either way (R-QENCODING).
    */
   encoding?: "json" | "cbor";
 }
 /**
- * Inline content per claim. Absent, no content is inlined and a claim carries only its content_hash (R-QOUTPUT).
+ * Inline content per claim. Absent, no content is inlined (R-QCONTENT).
  */
 export interface OutputContent {
   /**
-   * Cap in bytes on the content inlined per claim.
+   * Cap in bytes on the content inlined per claim; 0 inlines every claim's content in full.
    */
   max: number;
   /**
-   * What becomes of content past the cap: cutoff truncates, omit drops it, reference leaves a content_hash stub in its place.
+   * What becomes of content past the cap: cutoff truncates it, omit drops it. A claim keeps every field it carries either way.
    */
-  overflow: "cutoff" | "omit" | "reference";
+  overflow: "cutoff" | "omit";
 }
 export interface OrderKey {
   /**
-   * The field sorted on — any field a claim carries, or the derived height.
+   * The field sorted on — any field a claim carries, height included.
    */
   field: string;
   /**
@@ -197,7 +197,7 @@ export interface Execution {
    */
   layer?: string;
   /**
-   * Report verbosity: info gives high-level stages, debug routing and lowering, trace per-claim detail. Set, and only then, the stream carries one final report record after the last element, typed distinctly from result claims (R-QREPORT).
+   * Report verbosity: info gives high-level stages, debug routing and translation, trace per-claim detail. Set, and only then, the stream carries one final report record after the last element, typed distinctly from result claims (R-QREPORT).
    */
   report?: "info" | "debug" | "trace";
 }

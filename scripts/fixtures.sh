@@ -27,4 +27,7 @@ echo ">> path.Match table (tools/globoracle)"
 echo ">> query verdicts (tools/queryoracle)"
 (cd tools && go run ./queryoracle) > src/testing/query_oracle.json
 
+echo ">> framed result sequences (tools/seqoracle)"
+(cd tools && go run ./seqoracle) > src/testing/seq_oracle.json
+
 echo ">> regenerated; run 'make test' to see whether anything moved"

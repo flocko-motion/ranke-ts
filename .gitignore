@@ -11,3 +11,7 @@ testdata/
 
 # Local Claude config
 /.claude/
+
+# sindri hub artifacts (agent worktrees + hub state) — not for the repo
+.worktrees/
+.todos/

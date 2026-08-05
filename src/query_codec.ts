@@ -79,7 +79,9 @@ const ENCODINGS = ['json', 'cbor'] as const
 const REPORTS = ['info', 'debug', 'trace'] as const
 const COLLATIONS = ['numeric', 'lexical'] as const
 const DIRECTIONS = ['asc', 'desc'] as const
-const OVERFLOWS = ['cutoff', 'omit', 'reference'] as const
+// A claim keeps every field it carries either way, so no value stands in for content
+// left out — which is why "reference" left this vocabulary.
+const OVERFLOWS = ['cutoff', 'omit'] as const
 
 const OPERATORS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in', 'glob'] as const
 

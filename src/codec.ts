@@ -22,7 +22,14 @@ import {
   nodeSubtypeFromAlias,
   nodeSubtypeToAlias,
 } from './node_taxonomy.ts'
-import { CborReader, CborWriter, RankeCborError, encodeText, encodeUint } from './internal/cbor.ts'
+import {
+  CborReader,
+  CborWriter,
+  RankeCborError,
+  compareBytes,
+  encodeText,
+  encodeUint,
+} from './internal/cbor.ts'
 
 /** RankeDecodeError reports bytes a claim cannot be read from. */
 export class RankeDecodeError extends Error {
@@ -122,7 +129,7 @@ function readTextMap(raw: Uint8Array): Record<string, string> {
     const keyStart = r.position
     const wire = r.readText()
     const keyRaw = raw.subarray(keyStart, r.position)
-    if (prev !== null && compare(prev, keyRaw) >= 0) {
+    if (prev !== null && compareBytes(prev, keyRaw) >= 0) {
       throw new RankeCborError('field keys out of canonical order')
     }
     prev = keyRaw
@@ -130,15 +137,6 @@ function readTextMap(raw: Uint8Array): Record<string, string> {
   }
   r.expectEnd()
   return out
-}
-
-function compare(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length)
-  for (let i = 0; i < n; i++) {
-    const d = a[i]! - b[i]!
-    if (d !== 0) return d
-  }
-  return a.length - b.length
 }
 
 // A wire alias carries a leading "." — a prefix no literal name can have, so the
@@ -299,6 +297,82 @@ function decodeEdge(raw: Uint8Array, opts: DecodeOptions): Edge {
 }
 
 /**
+ * claimFromRecord is the Claim a decode of encodeClaim(n) yields, arrived at from the
+ * record instead of the bytes — what a builder holding the record wants, since parsing
+ * back its own output costs a seventh of a build.
+ *
+ * It rests on every string a record carries being charset-clean and canonical, which
+ * claim_builder.ts holds its input to, and on the alias tables being bijections, which
+ * the taxonomy tests hold them to: the wire then renders those strings back unchanged.
+ * `claim_builder_test.ts` proves the agreement over every builder case.
+ *
+ * ranke-go needs no counterpart — its Node already satisfies Claim, where a decoded
+ * claim here is plain data (see README).
+ *
+ * @internal
+ */
+export function claimFromRecord(n: NodeRecord, id: string): Claim {
+  return Object.freeze({
+    id,
+    type: `${n.typeClass}/${n.typeSub}`,
+    typeClass: n.typeClass,
+    typeSub: n.typeSub,
+    createdAt: n.createdAt,
+    createdAtMs: parseCreatedAt(n.createdAt),
+    height: n.height,
+    fields: fieldsInWireOrder(n.fields),
+    content: contentFromRef(n.content),
+    edges: Object.freeze((n.edges ?? []).map(edgeFromRecord)),
+  })
+}
+
+function edgeFromRecord(e: EdgeRecord): Edge {
+  return Object.freeze({
+    reference: e.reference,
+    type: `${e.typeClass}/${e.typeSub}`,
+    typeClass: e.typeClass,
+    typeSub: e.typeSub,
+    fields: fieldsInWireOrder(e.fields),
+    relationDirection: e.relationDirection ?? 0,
+    content: contentFromRef(e.content),
+  })
+}
+
+// fieldsInWireOrder is the field map a decode reads back: the same entries, in the order
+// the record writes them. That order is by encoded key bytes, so a short alias leads, and
+// a claim serialises the same whichever side it came from.
+function fieldsInWireOrder(
+  fields: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  if (fields === undefined) return Object.freeze({})
+  const names = Object.keys(fields)
+  if (names.length < 2) return Object.freeze({ ...fields }) // one entry is already in order
+  const wire = new Map(names.map((name) => [name, encodeText(aliasToWire(name, fieldNameToAlias))]))
+  const out: Record<string, string> = {}
+  for (const name of [...wire.keys()].sort((a, b) => compareBytes(wire.get(a)!, wire.get(b)!))) {
+    out[name] = fields[name]!
+  }
+  return Object.freeze(out)
+}
+
+// contentFromRef is the declaration a decode reads back. Empty inline content leaves
+// no slot in the record, so the wire carries none; the bytes are copied, as a decode's
+// are, so the claim holds what no caller can reach afterwards.
+function contentFromRef(ref: ContentRef | undefined): ContentRef {
+  if (ref === undefined || ref.kind === 'none') return contentNone
+  if (ref.kind === 'external') {
+    return Object.freeze({ kind: 'external', hash: ref.hash, size: ref.size, encoding: ref.encoding })
+  }
+  if (ref.bytes.length === 0) return contentNone
+  return Object.freeze({
+    kind: 'inline',
+    bytes: Uint8Array.from(ref.bytes),
+    size: ref.size,
+    encoding: ref.encoding,
+  })
+}
+
+/**
  * parseCreatedAt returns epoch milliseconds for an RFC 3339 timestamp, dropping any
  * precision past the millisecond — which is why claim.createdAt keeps the string.
  */
@@ -370,6 +444,20 @@ export function encodeEdge(e: EdgeRecord): Uint8Array {
  * edge's own record embedded raw — so S(v) commits to the edges and their content.
  */
 export function encodeNode(n: NodeRecord): Uint8Array {
+  return encodeNodeWithEdges(n, (n.edges ?? []).map(encodeEdge))
+}
+
+/**
+ * encodeNodeWithEdges is encodeNode where each edge's S(e) is already in hand, which is
+ * a builder's position: it encodes every edge to compute the edge ids. Canonical CBOR is
+ * deterministic, so bytes held are the bytes a re-encode yields — the same property the
+ * ids rest on.
+ *
+ * `edges` are S(e) for `n.edges`, one per edge and in that order.
+ *
+ * @internal
+ */
+export function encodeNodeWithEdges(n: NodeRecord, edges: readonly Uint8Array[]): Uint8Array {
   const entries: Array<readonly [Uint8Array, Uint8Array]> = [
     [encodeUint(N_TYPE_CLASS), encodeText(aliasToWire(n.typeClass, nodeClassToAlias))],
     [encodeUint(N_TYPE_SUB), encodeText(aliasToWire(n.typeSub, nodeSubtypeToAlias))],
@@ -385,11 +473,10 @@ export function encodeNode(n: NodeRecord): Uint8Array {
     encodingSub: N_ENCODING_SUB,
     inline: N_CONTENT,
   })
-  const edges = n.edges ?? []
   if (edges.length > 0) {
     const w = new CborWriter()
     w.writeArrayHeader(edges.length)
-    for (const e of edges) w.writeRaw(encodeEdge(e))
+    for (const raw of edges) w.writeRaw(raw)
     entries.push([encodeUint(N_EDGES), w.bytes()])
   }
 
@@ -400,8 +487,18 @@ export function encodeNode(n: NodeRecord): Uint8Array {
 
 /** encodeClaim wraps a node record as the stored claim: the record under key 1. */
 export function encodeClaim(n: NodeRecord): Uint8Array {
+  return encodeClaimFromNode(encodeNode(n))
+}
+
+/**
+ * encodeClaimFromNode is encodeClaim over S(v) already in hand — the very bytes the id
+ * was computed over, so the stored record and the id cannot come apart.
+ *
+ * @internal
+ */
+export function encodeClaimFromNode(node: Uint8Array): Uint8Array {
   const w = new CborWriter()
-  w.writeSortedMap([[encodeUint(CLAIM_NODE), encodeNode(n)]])
+  w.writeSortedMap([[encodeUint(CLAIM_NODE), node]])
   return w.bytes()
 }
 

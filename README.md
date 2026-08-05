@@ -13,7 +13,8 @@ file and name for name, so the two can be read side by side.
 
 - decode the canonical CBOR of a claim into its node, edges, fields and content
 - decode the JSON projection, arriving at the same claim
-- read a result run as it streams: cbor-seq (RFC 8742) and json-seq (RFC 7464)
+- read a result run as it streams — cbor-seq (RFC 8742) and json-seq (RFC 7464) —
+  whichever `output.detail` asked for: claims, ids, or routes of ids
 - build claims, encoding them to the bytes ranke-go encodes them to
 - build, check and encode a RankeQL query
 - the closed type vocabularies and the wire alias tables
@@ -169,11 +170,27 @@ cost, and an object per accessor is a cost a browser pays for nothing.
 **Zero runtime dependencies.** Everything ships in the package, including
 SHA-256, so a browser pulls no supply chain to read a claim.
 
-**Streaming is the primary path.** A result run is thousands of claims arriving
-over a `ReadableStream`, so the sequence readers (cbor-seq, json-seq) yield
-claims as bytes land and a whole-buffer `decodeClaim` is the special case. A
-reader distinguishes an incomplete record, where it waits for the next chunk,
-from a malformed one, where it stops.
+**Streaming is the primary path.** A result run is thousands of records arriving
+over a `ReadableStream`, so the sequence readers (cbor-seq, json-seq) yield them
+as bytes land and a whole-buffer `decodeClaim` is the special case. A reader
+distinguishes an incomplete record, where it waits for the next chunk, from a
+malformed one, where it stops.
+
+**A record is not always a claim.** `output.detail` and `output.shape` decide what
+one carries, so pick the reader for what you asked for:
+
+```ts
+readClaims(body, 'cbor')   // detail: claims | graph
+readIds(body)              // detail: id — a bare id per record, or a route per record
+readRecords(body, 'json')  // any detail: each record tagged by kind
+readRawRecords(body, 'json') // the framing alone, for a payload this library
+                             // does not yet name
+```
+
+`readRecords` yields `claim`, `claim_id`, `path_id` or `report` — the kinds of
+ranke-go's `ResultKind`. A run with `execution.report` set appends one report
+record after the last result, which `readClaims` passes over and `readRecords`
+hands you.
 
 **Synchronous throughout.** `crypto.subtle` would make every digest a promise
 and every decode async; a hand-rolled digest keeps one code path across
