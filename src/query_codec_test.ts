@@ -31,7 +31,7 @@ const oracle: OracleFile = JSON.parse(
 // The table is generated from a list in tools/queryoracle, so its size is pinned
 // rather than floored: a floor would let cases be deleted without anything noticing,
 // and a case removed is coverage removed.
-const CASES = 65
+const CASES = 66
 const REFUSALS = 41
 
 test('the oracle comes from a released ranke-go and is whole', () => {

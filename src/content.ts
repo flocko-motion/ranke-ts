@@ -23,7 +23,12 @@ export type ContentRef =
   | { readonly kind: 'none' }
   | {
       readonly kind: 'inline'
-      readonly bytes: Uint8Array
+      /**
+       * The bytes, or null where the record declares content it did not carry — what a
+       * read under a content cap delivers (R-QCONTENT), and what a structure-only cache
+       * holds. `size` still states the true length, so ask again with a wider cap.
+       */
+      readonly bytes: Uint8Array | null
       readonly size: number
       /** The media type, "class/sub" — mandatory wherever content is present. */
       readonly encoding: string
@@ -55,9 +60,18 @@ export function contentEncoding(c: ContentRef): string {
 }
 
 /**
- * inlineBytes returns the inline bytes, or null when the content is external or
- * absent — external content lives in the Universe and is fetched by its hash.
+ * inlineBytes returns the inline bytes, or null when the content is external, absent,
+ * or withheld — external content lives in the Universe and is fetched by its hash.
  */
 export function inlineBytes(c: ContentRef): Uint8Array | null {
   return c.kind === ContentInline ? c.bytes : null
+}
+
+/**
+ * contentWithheld reports content the record declares without carrying: a read under a
+ * cap (R-QCONTENT) inlines a prefix of a claim's content and leaves the rest out, and a
+ * cache may hold structure alone. Distinct from having no content, which `size` 0 says.
+ */
+export function contentWithheld(c: ContentRef): boolean {
+  return c.kind === ContentInline && c.bytes === null
 }
