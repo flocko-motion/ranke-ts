@@ -266,6 +266,18 @@ make generate         # regenerate src/query.ts from the committed schema
 Taking a new ranke-go release means bumping `tools/go.mod` and running
 `make fixtures`; a test then fails wherever the two implementations moved apart.
 
+`package.json` carries `0.0.0` in the tree, and the git tag carries the version.
+The release workflow stamps the tag's number into the package immediately before
+it publishes — `.github/workflows/release.yml`, the "Set version from the tag"
+step — so npm receives the right number and no commit has to be cut to bump it.
+The tag is therefore the one place a version lives, as in ranke-go and
+ranke-graph, where a module version is its tag. JSON takes no comments, so this
+note stands in for one.
+
+```sh
+make version  # the latest release tag, which is the version this tree answers to
+```
+
 ## Licence
 
 Apache 2.0. See [LICENSE](LICENSE).
