@@ -20,7 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test 'src/**/*_test.ts'"
+    "test": "./scripts/test.sh"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

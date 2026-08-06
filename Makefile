@@ -3,7 +3,7 @@
 # Thin wrapper over the npm scripts, so the targets match ranke-go's.
 
 .PHONY: all install test typecheck build clean testdata-clean verify release fixtures \
-	generate pull-rql-schema check-generated docs docs-clean \
+	bench version generate pull-rql-schema check-generated docs docs-clean \
 	major minor patch breaking feature fix
 
 # Foundational papers live in the ranke-graph repo. `make docs` pulls a fresh
@@ -27,6 +27,15 @@ test:
 # is a deliberate step rather than part of `verify`.
 fixtures:
 	@./scripts/fixtures.sh
+
+# Print a performance baseline: us per claim for a build with its stages, and bytes and
+# peak RSS for a decode. A record to re-run and compare by hand, so it asserts nothing and
+# stays out of `verify`, where a host that swings would fail a timing assertion at random.
+# Usage: make bench [ITERATIONS=20000] [CLAIMS=2000]
+ITERATIONS ?= 20000
+CLAIMS     ?= 2000
+bench:
+	@./scripts/bench.sh $(ITERATIONS) $(CLAIMS)
 
 # Take ranke-graph's released RQL schema, then regenerate the Query type from it.
 # Both are deliberate: the schema is committed so the build stays offline, and taking
@@ -62,6 +71,16 @@ testdata-clean:
 # The gate a release must pass. ranke-go splits the fast checks from its full
 # suite; here the whole lot runs in under a second, so `verify` is `all`.
 verify: typecheck test build
+
+# The version, which is the latest release tag: package.json carries 0.0.0 in the tree
+# and the release workflow stamps the tag's number in just before publishing. `--match`
+# holds the answer to release tags, as scripts/release.sh does when it picks the tag to
+# bump from — a prerelease or a stray tag is not the version this tree answers to.
+version:
+	@git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || { \
+		echo "no release tag found — package.json's 0.0.0 stands in until one is cut" >&2; \
+		exit 1; \
+	}
 
 # Cut a release: verify → rebase onto the default branch → merge via PR → tag the
 # merged tip → push the tag → watch the release workflow, failing here if it fails.

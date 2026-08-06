@@ -241,6 +241,19 @@ Node can strip: no `enum`, no `namespace`, no parameter properties. String
 unions stand in for enums, which also keeps the emitted values identical to
 ranke-go's constants.
 
+`make bench` prints a performance baseline: microseconds per claim for a build
+broken down by stage, and bytes and peak RSS for a decode. It asserts nothing and
+stays out of `verify`, since a host that swings by a quarter between two runs of one
+build would fail a timing assertion at random. Each run names the ranke-go release it
+was measured against, and prints beside its own figures a recorded pair taken on one
+host with `src/id.ts` flattened and not — so the ids a decode holds have a measured
+cost, and a run says which way the numbers went.
+
+```sh
+make bench                              # 20000 iterations over 2000 claims
+make bench ITERATIONS=2000 CLAIMS=1000  # a quicker look
+```
+
 Two steps need a toolchain beyond npm, so both are deliberate rather than part of
 `verify`:
 
@@ -252,6 +265,18 @@ make generate         # regenerate src/query.ts from the committed schema
 
 Taking a new ranke-go release means bumping `tools/go.mod` and running
 `make fixtures`; a test then fails wherever the two implementations moved apart.
+
+`package.json` carries `0.0.0` in the tree, and the git tag carries the version.
+The release workflow stamps the tag's number into the package immediately before
+it publishes — `.github/workflows/release.yml`, the "Set version from the tag"
+step — so npm receives the right number and no commit has to be cut to bump it.
+The tag is therefore the one place a version lives, as in ranke-go and
+ranke-graph, where a module version is its tag. JSON takes no comments, so this
+note stands in for one.
+
+```sh
+make version  # the latest release tag, which is the version this tree answers to
+```
 
 ## Licence
 
