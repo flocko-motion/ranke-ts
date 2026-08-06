@@ -366,7 +366,11 @@ function multikey(signature: Uint8Array): Uint8Array {
 }
 
 function inlineOf(content: ContentRef | undefined): Uint8Array {
-  return content !== undefined && content.kind === 'inline' ? content.bytes : new Uint8Array(0)
+  if (content === undefined || content.kind !== 'inline') return new Uint8Array(0)
+  // checkContent has already refused withheld bytes; hashing zero of them here would
+  // mint an id for content the claim never carried.
+  if (content.bytes === null) throw new RankeBuildError('inline content without its bytes')
+  return content.bytes
 }
 
 function resolveType(
@@ -399,6 +403,11 @@ function checkContent(content: ContentRef | undefined): void {
     throw new RankeBuildError(`invalid encoding subtype ${JSON.stringify(typeSub)}`)
   }
   if (content.kind === 'inline') {
+    // A claim's id is computed over its inline bytes, so content declared without them
+    // can be read and forwarded but never built into a new claim.
+    if (content.bytes === null) {
+      throw new RankeBuildError('inline content declared without its bytes cannot be signed')
+    }
     if (content.bytes.length > maxInlineContent) {
       throw new RankeBuildError(
         `inline content is at most ${maxInlineContent} bytes; larger belongs in external content`,

@@ -204,6 +204,9 @@ function content(
       encoding,
     })
   }
+  // A size with neither the bytes nor an address: content the producer declared and did
+  // not send, which a capped read delivers (R-QCONTENT).
+  if (size > 0) return Object.freeze({ kind: 'inline', bytes: null, size, encoding })
   return contentNone
 }
 
@@ -363,6 +366,11 @@ function contentFromRef(ref: ContentRef | undefined): ContentRef {
   if (ref.kind === 'external') {
     return Object.freeze({ kind: 'external', hash: ref.hash, size: ref.size, encoding: ref.encoding })
   }
+  // Content declared without its bytes carries its length and nothing else, so a claim
+  // built from such a declaration says what it holds and admits it has none of it.
+  if (ref.bytes === null) {
+    return Object.freeze({ kind: 'inline', bytes: null, size: ref.size, encoding: ref.encoding })
+  }
   if (ref.bytes.length === 0) return contentNone
   return Object.freeze({
     kind: 'inline',
@@ -515,7 +523,10 @@ function pushContent(
   entries.push([encodeUint(keys.encodingSub), encodeText(aliasToWire(typeSub, encodingSubToAlias))])
   if (content.size !== 0) entries.push([encodeUint(keys.size), encodeUint(content.size)])
   if (content.kind === 'inline') {
-    if (content.bytes.length > 0) entries.push([encodeUint(keys.inline), encodeBytes(content.bytes)])
+    // Withheld bytes leave the slot empty, the size above standing for what is missing.
+    if (content.bytes !== null && content.bytes.length > 0) {
+      entries.push([encodeUint(keys.inline), encodeBytes(content.bytes)])
+    }
     return
   }
   entries.push([encodeUint(keys.hash), encodeBytes(parseId(content.hash).rawBytes())])

@@ -53,7 +53,6 @@ var sentinels = []struct {
 	{"ErrQueryComparisonForm", ranke.ErrQueryComparisonForm},
 	{"ErrQueryHops", ranke.ErrQueryHops},
 	{"ErrQueryBounds", ranke.ErrQueryBounds},
-	{"ErrQueryOverflow", ranke.ErrQueryOverflow},
 	{"ErrQueryEncoding", ranke.ErrQueryEncoding},
 	{"ErrQueryEnum", ranke.ErrQueryEnum},
 }
@@ -116,6 +115,8 @@ func main() {
 				`"form":"original","encoding":"cbor","content":{"max":4096,"overflow":"cutoff"}}}`,
 		},
 		{"a zero content cap", `{"select":{"branch":"main"},"output":{"content":{"max":0,"overflow":"omit"}}}`},
+		// An absent overflow is omit (R-QCONTENT), so a cap alone is a whole pair.
+		{"a content cap with no overflow rule", `{"select":{"branch":"main"},"output":{"content":{"max":10}}}`},
 		{
 			"order, limit and execution",
 			`{"select":{"branch":"main"},"order":[{"field":"height","compare":"numeric","dir":"desc"},` +
@@ -148,10 +149,12 @@ func main() {
 		{"a comparison with none", `{"select":{"branch":"main"},"where":{"field":"a","test":{}}}`},
 		{"an unknown shape", `{"select":{"branch":"main"},"output":{"shape":"tree"}}`},
 		{"an unknown detail", `{"select":{"branch":"main"},"output":{"detail":"everything"}}`},
+		// "graph" asked for the closed graph, a claim cut down to the edges among the
+		// results, and left the vocabulary when R-QDETAIL settled on id or claims.
+		{"the retired graph detail", `{"select":{"branch":"main"},"output":{"detail":"graph"}}`},
 		{"an unknown form", `{"select":{"branch":"main"},"output":{"form":"resolved"}}`},
 		{"the native encoding, which only a Go caller may set", `{"select":{"branch":"main"},"output":{"encoding":"native"}}`},
 		{"an unknown encoding", `{"select":{"branch":"main"},"output":{"encoding":"yaml"}}`},
-		{"content without an overflow rule", `{"select":{"branch":"main"},"output":{"content":{"max":10}}}`},
 		{"an unknown overflow rule", `{"select":{"branch":"main"},"output":{"content":{"max":10,"overflow":"wrap"}}}`},
 		// "reference" left the vocabulary: it stood in for content a claim had, where
 		// R-QCONTENT now has a claim keep every field either way.

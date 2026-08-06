@@ -39,11 +39,32 @@ export interface Provenance {
   readonly substituted?: string
 }
 
+/**
+ * Capped is one claim as a read serves it under an `output.content` option
+ * (R-QCONTENT) — the bytes a client actually receives when a query caps content, which
+ * `EncodeCBOR` alone never produces.
+ */
+export interface Capped {
+  readonly label: string
+  readonly id: string
+  /** The `max` asked for; -1 stands for an absent `content` section. */
+  readonly cap: number
+  /** The `overflow` asked for; "" where none was, which means omit. */
+  readonly overflow: string
+  /** The content length the claim declares, whatever the record carries. */
+  readonly size: number
+  /** The bytes the served record carries, which is what the cap decided. */
+  readonly inline: number
+  readonly cbor: string
+  readonly json: unknown
+}
+
 interface FixtureFile {
   readonly note: string
   readonly provenance: Provenance
   readonly ids: Readonly<Record<string, string>>
   readonly fixtures: readonly Fixture[]
+  readonly capped: readonly Capped[]
 }
 
 const file: FixtureFile = JSON.parse(
@@ -57,6 +78,9 @@ export const ids = file.ids
 export const provenance: Provenance = file.provenance
 
 export const all: readonly Fixture[] = file.fixtures
+
+/** capped holds the source claim served under each content option R-QCONTENT admits. */
+export const capped: readonly Capped[] = file.capped
 
 function byLabel(label: string): Fixture {
   const f = all.find((x) => x.label === label)
@@ -86,7 +110,7 @@ export const identityNote = byLabel('identity-note')
 export const identityDerived = byLabel('identity-derived')
 
 /** cborBytes decodes a fixture's hex. */
-export function cborBytes(f: Fixture): Uint8Array {
+export function cborBytes(f: Fixture | Capped): Uint8Array {
   const out = new Uint8Array(f.cbor.length / 2)
   for (let i = 0; i < out.length; i++) {
     out[i] = Number.parseInt(f.cbor.slice(i * 2, i * 2 + 2), 16)

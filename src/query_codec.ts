@@ -37,7 +37,6 @@ export type QueryErrorCode =
   // A bound and an enumeration fail differently, and a caller switching on the code
   // reads ErrQueryEnum as a mistyped string.
   | 'ErrQueryBounds'
-  | 'ErrQueryOverflow'
   // ranke-go refuses these while decoding, so neither mirrors a sentinel.
   | 'ErrQueryUnknownField'
   | 'ErrQueryType'
@@ -71,7 +70,9 @@ export class RankeQueryError extends Error {
 
 const DIRS = ['provenance', 'uses', 'connections'] as const
 const SHAPES = ['single', 'path'] as const
-const DETAILS = ['id', 'graph', 'claims'] as const
+// "graph" asked for the closed graph, a claim cut down to the edges among the results,
+// so R-QDETAIL dropped it: id or claims.
+const DETAILS = ['id', 'claims'] as const
 const FORMS = ['original', 'materialized'] as const
 // Three values the schema excludes because only a Go caller may set them: the native
 // encoding asks for Go objects, and report's error and warn are Go-side thresholds.
@@ -339,13 +340,7 @@ function validateOutput(o: Output): void {
   checkObject('output.content', o.content, KEYS.content)
   checkInt('output.content.max', o.content.max)
   checkString('output.content.overflow', o.content.overflow)
-  if (o.content.overflow === undefined) {
-    throw new RankeQueryError(
-      'ErrQueryOverflow',
-      'output.content.overflow',
-      `required (${OVERFLOWS.join(' | ')})`,
-    )
-  }
+  // An absent overflow is omit (R-QCONTENT), so a cap alone is a whole content pair.
   oneOf('output.content.overflow', o.content.overflow, OVERFLOWS)
   // A byte cap is a count, which the schema bounds at zero.
   if (o.content.max === undefined || o.content.max < 0) {
