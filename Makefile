@@ -31,9 +31,9 @@ fixtures:
 # Print a performance baseline: us per claim for a build with its stages, and bytes and
 # peak RSS for a decode. A record to re-run and compare by hand, so it asserts nothing and
 # stays out of `verify`, where a host that swings would fail a timing assertion at random.
-# Usage: make bench [ITERATIONS=20000] [CLAIMS=5000]
+# Usage: make bench [ITERATIONS=20000] [CLAIMS=2000]
 ITERATIONS ?= 20000
-CLAIMS     ?= 5000
+CLAIMS     ?= 2000
 bench:
 	@./scripts/bench.sh $(ITERATIONS) $(CLAIMS)
 

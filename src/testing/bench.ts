@@ -29,21 +29,29 @@ import {
 import { hashContent, idFromBytes } from '../id.ts'
 import * as fx from './fixtures.ts'
 
-// Recorded before the perf work, on another host: the ropes-per-id build, the builder
-// decoding its own bytes, and each record encoded three times over. Printed alongside
-// so a run says which way the numbers went, and dated by that description rather than
-// offered as a target this host should reach.
-const RECORDED = {
-  buildMicros: 243,
-  claimBytes: 8070,
-  heapMiB: 56,
-  consStringMiB: 35,
-  claims: 5000,
-}
+// Recorded over 2000 claims on one host, across two trees: the current one, and the same
+// tree with src/id.ts alone as it stood at 48e5885^, where an id was a rope of one node
+// per base32 digit. The two columns therefore compare with each other; a run above
+// compares with them as far as the two hosts do, which is unknown from here.
+//
+// The heap figures repeated byte for byte between runs while the timings moved by a
+// third, so the decode times are two runs each and settle nothing. They are here to
+// notice a cost — flattening allocates and copies where a rope appended — rather than to
+// report one.
+const RECORDED: ReadonlyArray<readonly [string, string, string]> = [
+  ['retained per decoded claim', '17055 B', '2545 B'],
+  ['retained over 2000 claims', '32.5 MiB', '4.9 MiB'],
+  ['rss before the read', '107.6 MiB', '107.3 MiB'],
+  ['rss at its peak', '182.1 MiB', '126.5 MiB'],
+  ['rss growth over the read', '+74.5 MiB', '+19.2 MiB'],
+  ['decodeClaim, the richest fixture', '44.7, 55.9 us', '65.4, 64.7 us'],
+  ['decodeClaim with every edge id', '70.7, 84.2 us', '97.8, 82.8 us'],
+]
 
 const RUNS = 7
 const ITERATIONS = count(process.argv[2], 20000, 'iterations')
-const DECODED_CLAIMS = count(process.argv[3], 5000, 'claims')
+// 2000 by default, which is what the recorded block below was measured over.
+const DECODED_CLAIMS = count(process.argv[3], 2000, 'claims')
 
 // A count reaches here from a command line, where anything at all can be typed, and a
 // NaN would print as a report rather than as a mistake.
@@ -255,11 +263,17 @@ if (!r.settled) console.log('(run without --expose-gc: the heap figures include 
 row('retained per decoded claim', r.bytesPerClaim.toFixed(0), 'B')
 row(`retained over ${DECODED_CLAIMS} claims`, ((r.bytesPerClaim * DECODED_CLAIMS) / MiB).toFixed(1), 'MiB')
 row('rss before the read', r.floorRssMiB.toFixed(1), 'MiB')
-row('rss at its peak during it', r.peakRssMiB.toFixed(1), 'MiB')
+row('rss at its peak', r.peakRssMiB.toFixed(1), 'MiB')
+row('rss growth over the read', `+${(r.peakRssMiB - r.floorRssMiB).toFixed(1)}`, 'MiB')
 row('rss at its peak, whole process', (process.resourceUsage().maxRSS / 1024).toFixed(1), 'MiB')
+console.log('What the claims hold is the retained figure; the rss rows also answer to how much')
+console.log('room the heap had already taken, so they move between runs where the counts do not.')
 console.log()
 
-console.log('=== recorded before the perf work, on another host ==================')
-row('build, four edges', String(RECORDED.buildMicros), 'us')
-row('retained per decoded claim', String(RECORDED.claimBytes), 'B')
-row(`retained over ${RECORDED.claims} claims`, String(RECORDED.heapMiB), 'MiB', `${RECORDED.consStringMiB} MiB of it concatenated strings`)
+console.log('=== recorded on one host, id.ts flattened and not ====================')
+console.log(`${'over 2000 claims'.padEnd(LABEL)}${'pre-flattening'.padStart(14)}${'flattened'.padStart(16)}`)
+for (const [label, pre, now] of RECORDED) {
+  console.log(`${label.padEnd(LABEL)}${pre.padStart(14)}${now.padStart(16)}`)
+}
+console.log('The heap figures repeated exactly between runs and the timings moved by a third,')
+console.log('so the two decode rows are two runs each and settle nothing on their own.')

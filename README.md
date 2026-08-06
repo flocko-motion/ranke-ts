@@ -245,11 +245,12 @@ ranke-go's constants.
 broken down by stage, and bytes and peak RSS for a decode. It asserts nothing and
 stays out of `verify`, since a host that swings by a quarter between two runs of one
 build would fail a timing assertion at random. Each run names the ranke-go release it
-was measured against and prints the figures recorded before the performance work
-beside its own, so it says which way the numbers went.
+was measured against, and prints beside its own figures a recorded pair taken on one
+host with `src/id.ts` flattened and not — so the ids a decode holds have a measured
+cost, and a run says which way the numbers went.
 
 ```sh
-make bench                              # 20000 iterations over 5000 claims
+make bench                              # 20000 iterations over 2000 claims
 make bench ITERATIONS=2000 CLAIMS=1000  # a quicker look
 ```
 
