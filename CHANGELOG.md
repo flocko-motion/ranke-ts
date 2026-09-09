@@ -6,6 +6,8 @@ rewording does not.
 
 ## Unreleased
 
+## v0.29.0 — 2026-09-09
+
 ### Changed
 
 - The reference data traces to ranke-go v0.29.0. Nothing this library exposes moved
