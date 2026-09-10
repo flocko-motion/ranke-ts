@@ -6,6 +6,8 @@ rewording does not.
 
 ## Unreleased
 
+## v0.30.0 — 2026-09-10
+
 ### Added
 
 - `queries.ts`, mirroring ranke-go's new `queries` package: the reads a caller needs
