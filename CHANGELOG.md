@@ -6,6 +6,35 @@ rewording does not.
 
 ## Unreleased
 
+## v0.30.0 — 2026-09-10
+
+### Added
+
+- `queries.ts`, mirroring ranke-go's new `queries` package: the reads a caller needs
+  before it can write anything. `contributorsQuery(branch)` asks for a branch's
+  `contribution/contributor` claims, `contributorsByKeyQuery(branch)` asks with content
+  inlined, and `contributorsByKey(claims, pubkey)` selects the identities holding a key
+  from the answer. `BranchArchive` is the scope naming the archive entire.
+
+  ranke-go runs each read against an `Archive` and returns claims; there is no `Archive`
+  here, so a helper states the query and the caller sends it. Two things follow. The key
+  match is a pass over the decoded answer rather than another `where`, RQL filtering on a
+  claim's shape where a contributor's pubkey is its content — hence the by-key read asks
+  for content where ranke-go fetches it per claim. And several contributors can hold one
+  key, no rule making a `pubkey` unique, so all of them come back rather than one.
+
+  A pubkey cut short by a capped read, or addressed as external content this library does
+  not fetch, is refused rather than reported as no match.
+
+### Changed
+
+- The reference data traces to ranke-go v0.30.0. No claim id, encoding or existing query
+  verdict moved: v0.30.0 binds the first contributor to a branch as it founds an archive,
+  and adds `ValidateBranchName`, both of which are the Sequencer's side of a
+  contribution. A branch name's form reaches nothing here — ranke-go checks it in `Found`
+  and when a contribution creates a branch, never against a query's `select.branch`, so
+  applying it to a query would refuse reads the server accepts.
+
 ## v0.29.0 — 2026-09-09
 
 ### Changed
