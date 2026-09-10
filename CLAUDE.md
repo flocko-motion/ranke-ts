@@ -60,6 +60,13 @@ checks belong here; executing one needs the graph and is RankeDB's. Mirror
 `query.go` and `query_codec.go` (minus `DecodeQuery` — nothing browser-side
 receives a query), never `query_default.go`.
 
+`queries.ts` mirrors ranke-go's `queries` package, which runs each named read against an
+`Archive`. There is no `Archive` here, so a helper states the `Query` and the caller sends
+it. A match on content — a contributor's pubkey — is a pass over the decoded answer, since
+RQL filters on a claim's shape; that is why the by-key read asks for content inlined where
+ranke-go fetches it per claim. Reserved scope names live here too, `query.go` keeping them
+beside a `Query` type that is generated here.
+
 `src/query.ts` is GENERATED from the committed `schema/rql.schema.json` — never
 edit it. `make pull-rql-schema` takes a new release, `make generate` regenerates,
 and `make check-generated` refuses a release where the two drifted apart. A

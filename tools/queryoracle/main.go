@@ -103,6 +103,29 @@ func main() {
 			"an explicit empty in set, which is present and so counts",
 			`{"select":{"branch":"main"},"where":{"field":"a","test":{"in":[]}}}`,
 		},
+		// The named reads of the queries package, so ranke-go vouches for the queries
+		// ranke-ts's own builders emit rather than ranke-ts vouching for itself.
+		{
+			"queries.Contributors: a branch's contributor claims",
+			`{"select":{"branch":"main"},"where":{"field":"type","test":{"eq":"contribution/contributor"}}}`,
+		},
+		{
+			"queries.Contributors over the archive entire",
+			`{"select":{"branch":"$archive"},"where":{"field":"type","test":{"eq":"contribution/contributor"}}}`,
+		},
+		{
+			"queries.ContributorsByKey: the same read with content inlined",
+			`{"select":{"branch":"main"},"where":{"field":"type","test":{"eq":"contribution/contributor"}},` +
+				`"output":{"content":{"max":0}}}`,
+		},
+		// ValidateBranchName holds a branch to `R-FIELDS`'s form, and reads are not where
+		// it applies: `Found` and a contribution creating a branch are. A validator that
+		// checked it here would refuse reads the server answers, so the boundary is a case
+		// rather than a comment.
+		{
+			"a scope outside the form a branch name takes, which a READ does not police",
+			`{"select":{"branch":"Not_A_Valid_Branch_Name"}}`,
+		},
 		// `R-QTIMEOP`: one spelling per time field. A V-TIME field takes the
 		// fixed-width form and `dated` takes EDTF, so an instant has one spelling on
 		// each and a text comparison cannot land on two different seconds.

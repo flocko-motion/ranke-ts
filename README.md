@@ -18,7 +18,7 @@ file and name for name, so the two can be read side by side.
 - build claims, encoding them to the bytes ranke-go encodes them to
 - read a bookmark, the record locating an archive's moving head, and address the
   `id_seq(i, s)` slot it is filed under
-- build, check and encode a RankeQL query
+- build, check and encode a RankeQL query, the named reads of `queries.ts` included
 - the closed type vocabularies and the wire alias tables
 - ids: the SHA2-256 multihash framing and the multibase string form
 
@@ -137,6 +137,41 @@ ErrQueryType          limit.results: expected a whole number, got string "5"
 Three values exist on ranke-go's side and not on the wire: `output.encoding`
 `native`, and `execution.report` `error` and `warn`. The schema excludes all
 three, so the generated type refuses them without a rule of its own.
+
+## Named reads
+
+`queries.ts` holds the reads a caller needs before it can write anything, as ordinary
+RQL — a worked example as much as a library. Finding the contributor claim whose
+pubkey you hold is the first of them: a claim signs under one, so nothing can be built
+until it is known.
+
+```ts
+import { contributorsByKey, contributorsByKeyQuery, readClaims } from '@rankegraph/ranke'
+
+const body = await send(EncodeQuery(contributorsByKeyQuery('main')))
+const claims = []
+for await (const c of readClaims(body, 'cbor')) claims.push(c)
+
+const mine = contributorsByKey(claims, pubkey) // the identities holding that key
+```
+
+ranke-go's `queries` package runs each read against an `Archive` and hands back
+claims. There is no `Archive` here, so a helper states the query and the caller sends
+it — the same split `query_codec.ts` makes. Two consequences:
+
+**The key match is a pass over the answer, not another `where`.** RQL filters on a
+claim's shape rather than its content, and a contributor's pubkey *is* its content. So
+`contributorsByKeyQuery` asks for content inlined (`max: 0`) where ranke-go fetches it
+per claim, and the comparison happens over the decoded claims.
+
+**Several contributors can hold one key.** No rule makes a `pubkey` unique, so a key
+registered twice is two identities carrying different provenance, and choosing between
+them is yours. `contributorsByKey` returns all of them rather than picking.
+
+Content that is declared but unreadable is refused rather than reported as no match —
+a pubkey cut short by a capped read, or addressed as external content this library
+does not fetch. Answering "no contributor holds this key" without having looked is the
+one outcome worse than an error.
 
 ## Install
 
